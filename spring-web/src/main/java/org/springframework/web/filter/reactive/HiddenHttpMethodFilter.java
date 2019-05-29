@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2017 the original author or authors.
+ * Copyright 2002-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,9 @@
 
 package org.springframework.web.filter.reactive;
 
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Locale;
 
 import reactor.core.publisher.Mono;
@@ -37,30 +40,37 @@ import org.springframework.web.server.WebFilterChain;
  * return value using {@link ServerWebExchange#mutate()}.
  *
  * <p>The name of the request parameter defaults to {@code _method}, but can be
- * adapted via the {@link #setMethodParam(String) methodParam} property.
+ * adapted via the {@link #setMethodParamName(String) methodParamName} property.
  *
  * @author Greg Turnquist
+ * @author Rossen Stoyanchev
  * @since 5.0
  */
 public class HiddenHttpMethodFilter implements WebFilter {
 
-	/** Default method parameter: {@code _method} */
-	public static final String DEFAULT_METHOD_PARAM = "_method";
+	private static final List<HttpMethod> ALLOWED_METHODS =
+			Collections.unmodifiableList(Arrays.asList(HttpMethod.PUT,
+					HttpMethod.DELETE, HttpMethod.PATCH));
 
-	private String methodParam = DEFAULT_METHOD_PARAM;
+	/** Default name of the form parameter with the HTTP method to use. */
+	public static final String DEFAULT_METHOD_PARAMETER_NAME = "_method";
+
+
+	private String methodParamName = DEFAULT_METHOD_PARAMETER_NAME;
+
 
 	/**
-	 * Set the parameter name to look for HTTP methods.
-	 * @see #DEFAULT_METHOD_PARAM
+	 * Set the name of the form parameter with the HTTP method to use.
+	 * <p>By default this is set to {@code "_method"}.
 	 */
-	public void setMethodParam(String methodParam) {
-		Assert.hasText(methodParam, "'methodParam' must not be empty");
-		this.methodParam = methodParam;
+	public void setMethodParamName(String methodParamName) {
+		Assert.hasText(methodParamName, "'methodParamName' must not be empty");
+		this.methodParamName = methodParamName;
 	}
 
+
 	/**
-	 * Transform an HTTP POST into another method based on {@code methodParam}
-	 *
+	 * Transform an HTTP POST into another method based on {@code methodParamName}.
 	 * @param exchange the current server exchange
 	 * @param chain provides a way to delegate to the next filter
 	 * @return {@code Mono<Void>} to indicate when request processing is complete
@@ -68,36 +78,27 @@ public class HiddenHttpMethodFilter implements WebFilter {
 	@Override
 	public Mono<Void> filter(ServerWebExchange exchange, WebFilterChain chain) {
 
-		if (exchange.getRequest().getMethod() == HttpMethod.POST) {
-			return exchange.getFormData()
-					.map(formData -> {
-						String method = formData.getFirst(methodParam);
-						if (StringUtils.hasLength(method)) {
-							return convertedRequest(exchange, method);
-						}
-						else {
-							return exchange;
-						}
-					})
-					.then(convertedExchange -> chain.filter(convertedExchange));
+		if (exchange.getRequest().getMethod() != HttpMethod.POST) {
+			return chain.filter(exchange);
+		}
+
+		return exchange.getFormData()
+				.map(formData -> {
+					String method = formData.getFirst(this.methodParamName);
+					return StringUtils.hasLength(method) ? mapExchange(exchange, method) : exchange;
+				})
+				.flatMap(chain::filter);
+	}
+
+	private ServerWebExchange mapExchange(ServerWebExchange exchange, String methodParamValue) {
+		HttpMethod httpMethod = HttpMethod.resolve(methodParamValue.toUpperCase(Locale.ENGLISH));
+		Assert.notNull(httpMethod, () -> "HttpMethod '" + methodParamValue + "' not supported");
+		if (ALLOWED_METHODS.contains(httpMethod)) {
+			return exchange.mutate().request(builder -> builder.method(httpMethod)).build();
 		}
 		else {
-			return chain.filter(exchange);
+			return exchange;
 		}
 	}
 
-	/**
-	 * Mutate exchange into a new HTTP request method.
-	 *
-	 * @param exchange original {@link ServerWebExchange}
-	 * @param method request HTTP method based on form data
-	 * @return a mutated {@link ServerWebExchange}
-	 */
-	private ServerWebExchange convertedRequest(ServerWebExchange exchange, String method) {
-		HttpMethod resolved = HttpMethod.resolve(method.toUpperCase(Locale.ENGLISH));
-		Assert.notNull(resolved, () -> "HttpMethod '" + method + "' is not supported");
-		return exchange.mutate()
-				.request(builder -> builder.method(resolved))
-				.build();
-	}
 }

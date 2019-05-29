@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,6 +20,7 @@ import java.util.Comparator;
 import java.util.Map;
 
 import org.springframework.core.convert.ConversionService;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.comparator.Comparators;
 
@@ -87,12 +88,7 @@ public class ConvertingComparator<S, T> implements Comparator<S> {
 	 * @return a new {@link ConvertingComparator} instance
 	 */
 	public static <K, V> ConvertingComparator<Map.Entry<K, V>, K> mapEntryKeys(Comparator<K> comparator) {
-		return new ConvertingComparator<>(comparator, new Converter<Map.Entry<K, V>, K>() {
-			@Override
-			public K convert(Map.Entry<K, V> source) {
-				return source.getKey();
-			}
-		});
+		return new ConvertingComparator<>(comparator, Map.Entry::getKey);
 	}
 
 	/**
@@ -102,12 +98,7 @@ public class ConvertingComparator<S, T> implements Comparator<S> {
 	 * @return a new {@link ConvertingComparator} instance
 	 */
 	public static <K, V> ConvertingComparator<Map.Entry<K, V>, V> mapEntryValues(Comparator<V> comparator) {
-		return new ConvertingComparator<>(comparator, new Converter<Map.Entry<K, V>, V>() {
-			@Override
-			public V convert(Map.Entry<K, V> source) {
-				return source.getValue();
-			}
-		});
+		return new ConvertingComparator<>(comparator, Map.Entry::getValue);
 	}
 
 
@@ -129,6 +120,7 @@ public class ConvertingComparator<S, T> implements Comparator<S> {
 		}
 
 		@Override
+		@Nullable
 		public T convert(S source) {
 			return this.conversionService.convert(source, this.targetType);
 		}

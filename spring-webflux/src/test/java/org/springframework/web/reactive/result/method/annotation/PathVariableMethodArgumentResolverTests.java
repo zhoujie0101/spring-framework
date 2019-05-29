@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2017 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,23 +27,20 @@ import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import org.springframework.core.MethodParameter;
+import org.springframework.core.ReactiveAdapterRegistry;
 import org.springframework.core.annotation.SynthesizingMethodParameter;
 import org.springframework.format.support.DefaultFormattingConversionService;
-import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.mock.http.server.reactive.test.MockServerHttpRequest;
-import org.springframework.mock.http.server.reactive.test.MockServerHttpResponse;
+import org.springframework.mock.web.test.server.MockServerWebExchange;
 import org.springframework.util.ReflectionUtils;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.support.ConfigurableWebBindingInitializer;
 import org.springframework.web.reactive.BindingContext;
 import org.springframework.web.reactive.HandlerMapping;
 import org.springframework.web.server.ServerErrorException;
-import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.adapter.DefaultServerWebExchange;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 /**
  * Unit tests for {@link PathVariableMethodArgumentResolver}.
@@ -55,40 +52,39 @@ public class PathVariableMethodArgumentResolverTests {
 
 	private PathVariableMethodArgumentResolver resolver;
 
-	private ServerWebExchange exchange;
+	private final MockServerWebExchange exchange= MockServerWebExchange.from(MockServerHttpRequest.get("/"));
 
 	private MethodParameter paramNamedString;
-
 	private MethodParameter paramString;
-
 	private MethodParameter paramNotRequired;
-
 	private MethodParameter paramOptional;
+	private MethodParameter paramMono;
 
 
 	@Before
 	public void setup() throws Exception {
-		this.resolver = new PathVariableMethodArgumentResolver(null);
-
-		ServerHttpRequest request = MockServerHttpRequest.get("/").build();
-		this.exchange = new DefaultServerWebExchange(request, new MockServerHttpResponse());
+		this.resolver = new PathVariableMethodArgumentResolver(null, ReactiveAdapterRegistry.getSharedInstance());
 
 		Method method = ReflectionUtils.findMethod(getClass(), "handle", (Class<?>[]) null);
 		paramNamedString = new SynthesizingMethodParameter(method, 0);
 		paramString = new SynthesizingMethodParameter(method, 1);
 		paramNotRequired = new SynthesizingMethodParameter(method, 2);
 		paramOptional = new SynthesizingMethodParameter(method, 3);
+		paramMono = new SynthesizingMethodParameter(method, 4);
 	}
 
 
 	@Test
 	public void supportsParameter() {
-		assertTrue(this.resolver.supportsParameter(this.paramNamedString));
-		assertFalse(this.resolver.supportsParameter(this.paramString));
+		assertThat(this.resolver.supportsParameter(this.paramNamedString)).isTrue();
+		assertThat(this.resolver.supportsParameter(this.paramString)).isFalse();
+		assertThatIllegalStateException().isThrownBy(() ->
+				this.resolver.supportsParameter(this.paramMono))
+			.withMessageStartingWith("PathVariableMethodArgumentResolver does not support reactive type wrapper");
 	}
 
 	@Test
-	public void resolveArgument() throws Exception {
+	public void resolveArgument() {
 		Map<String, String> uriTemplateVars = new HashMap<>();
 		uriTemplateVars.put("name", "value");
 		this.exchange.getAttributes().put(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, uriTemplateVars);
@@ -96,11 +92,11 @@ public class PathVariableMethodArgumentResolverTests {
 		BindingContext bindingContext = new BindingContext();
 		Mono<Object> mono = this.resolver.resolveArgument(this.paramNamedString, bindingContext, this.exchange);
 		Object result = mono.block();
-		assertEquals("value", result);
+		assertThat(result).isEqualTo("value");
 	}
 
 	@Test
-	public void resolveArgumentNotRequired() throws Exception {
+	public void resolveArgumentNotRequired() {
 		Map<String, String> uriTemplateVars = new HashMap<>();
 		uriTemplateVars.put("name", "value");
 		this.exchange.getAttributes().put(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, uriTemplateVars);
@@ -108,11 +104,11 @@ public class PathVariableMethodArgumentResolverTests {
 		BindingContext bindingContext = new BindingContext();
 		Mono<Object> mono = this.resolver.resolveArgument(this.paramNotRequired, bindingContext, this.exchange);
 		Object result = mono.block();
-		assertEquals("value", result);
+		assertThat(result).isEqualTo("value");
 	}
 
 	@Test
-	public void resolveArgumentWrappedAsOptional() throws Exception {
+	public void resolveArgumentWrappedAsOptional() {
 		Map<String, String> uriTemplateVars = new HashMap<>();
 		uriTemplateVars.put("name", "value");
 		this.exchange.getAttributes().put(HandlerMapping.URI_TEMPLATE_VARIABLES_ATTRIBUTE, uriTemplateVars);
@@ -123,11 +119,11 @@ public class PathVariableMethodArgumentResolverTests {
 
 		Mono<Object> mono = this.resolver.resolveArgument(this.paramOptional, bindingContext, this.exchange);
 		Object result = mono.block();
-		assertEquals(Optional.of("value"), result);
+		assertThat(result).isEqualTo(Optional.of("value"));
 	}
 
 	@Test
-	public void handleMissingValue() throws Exception {
+	public void handleMissingValue() {
 		BindingContext bindingContext = new BindingContext();
 		Mono<Object> mono = this.resolver.resolveArgument(this.paramNamedString, bindingContext, this.exchange);
 		StepVerifier.create(mono)
@@ -137,7 +133,7 @@ public class PathVariableMethodArgumentResolverTests {
 	}
 
 	@Test
-	public void nullIfNotRequired() throws Exception {
+	public void nullIfNotRequired() {
 		BindingContext bindingContext = new BindingContext();
 		Mono<Object> mono = this.resolver.resolveArgument(this.paramNotRequired, bindingContext, this.exchange);
 		StepVerifier.create(mono)
@@ -147,24 +143,28 @@ public class PathVariableMethodArgumentResolverTests {
 	}
 
 	@Test
-	public void wrapEmptyWithOptional() throws Exception {
+	public void wrapEmptyWithOptional() {
 		BindingContext bindingContext = new BindingContext();
 		Mono<Object> mono = this.resolver.resolveArgument(this.paramOptional, bindingContext, this.exchange);
 
 		StepVerifier.create(mono)
 				.consumeNextWith(value -> {
-					assertTrue(value instanceof Optional);
-					assertFalse(((Optional) value).isPresent());
+					boolean condition = value instanceof Optional;
+					assertThat(condition).isTrue();
+					assertThat(((Optional<?>) value).isPresent()).isFalse();
 				})
 				.expectComplete()
 				.verify();
 	}
 
 
-	@SuppressWarnings("unused")
-	public void handle(@PathVariable(value = "name") String param1, String param2,
+	@SuppressWarnings({"unused", "OptionalUsedAsFieldOrParameterType"})
+	public void handle(
+			@PathVariable(value = "name") String param1,
+			String param2,
 			@PathVariable(name = "name", required = false) String param3,
-			@PathVariable("name") Optional<String> param4) {
+			@PathVariable("name") Optional<String> param4,
+			@PathVariable Mono<String> param5) {
 	}
 
 }

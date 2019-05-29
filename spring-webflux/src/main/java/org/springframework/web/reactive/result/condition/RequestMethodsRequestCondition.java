@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -19,27 +19,37 @@ package org.springframework.web.reactive.result.condition;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 import org.springframework.http.HttpMethod;
 import org.springframework.http.server.reactive.ServerHttpRequest;
+import org.springframework.lang.Nullable;
 import org.springframework.web.bind.annotation.RequestMethod;
 import org.springframework.web.cors.reactive.CorsUtils;
 import org.springframework.web.server.ServerWebExchange;
 
 /**
  * A logical disjunction (' || ') request condition that matches a request
- * against a set of {@link RequestMethod}s.
+ * against a set of {@link RequestMethod RequestMethods}.
  *
  * @author Rossen Stoyanchev
  * @since 5.0
  */
 public final class RequestMethodsRequestCondition extends AbstractRequestCondition<RequestMethodsRequestCondition> {
 
-	private static final RequestMethodsRequestCondition HEAD_CONDITION =
-			new RequestMethodsRequestCondition(RequestMethod.HEAD);
+	/** Per HTTP method cache to return ready instances from getMatchingCondition. */
+	private static final Map<String, RequestMethodsRequestCondition> requestMethodConditionCache;
+
+	static {
+		requestMethodConditionCache = new HashMap<>(RequestMethod.values().length);
+		for (RequestMethod method : RequestMethod.values()) {
+			requestMethodConditionCache.put(method.name(), new RequestMethodsRequestCondition(method));
+		}
+	}
 
 
 	private final Set<RequestMethod> methods;
@@ -65,7 +75,7 @@ public final class RequestMethodsRequestCondition extends AbstractRequestConditi
 
 
 	/**
-	 * Returns all {@link RequestMethod}s contained in this condition.
+	 * Returns all {@link RequestMethod RequestMethods} contained in this condition.
 	 */
 	public Set<RequestMethod> getMethods() {
 		return this.methods;
@@ -102,17 +112,18 @@ public final class RequestMethodsRequestCondition extends AbstractRequestConditi
 	 * request method is OPTIONS.
 	 */
 	@Override
+	@Nullable
 	public RequestMethodsRequestCondition getMatchingCondition(ServerWebExchange exchange) {
 		if (CorsUtils.isPreFlightRequest(exchange.getRequest())) {
 			return matchPreFlight(exchange.getRequest());
 		}
 		if (getMethods().isEmpty()) {
-			if (RequestMethod.OPTIONS.name().equals(exchange.getRequest().getMethod().name())) {
-				return null; // No implicit match for OPTIONS (we handle it)
+			if (RequestMethod.OPTIONS.name().equals(exchange.getRequest().getMethodValue())) {
+				return null; // We handle OPTIONS transparently, so don't match if no explicit declarations
 			}
 			return this;
 		}
-		return matchRequestMethod(exchange.getRequest().getMethod().name());
+		return matchRequestMethod(exchange.getRequest().getMethodValue());
 	}
 
 	/**
@@ -120,24 +131,25 @@ public final class RequestMethodsRequestCondition extends AbstractRequestConditi
 	 * Hence empty conditions is a match, otherwise try to match to the HTTP
 	 * method in the "Access-Control-Request-Method" header.
 	 */
+	@Nullable
 	private RequestMethodsRequestCondition matchPreFlight(ServerHttpRequest request) {
 		if (getMethods().isEmpty()) {
 			return this;
 		}
 		HttpMethod expectedMethod = request.getHeaders().getAccessControlRequestMethod();
-		return matchRequestMethod(expectedMethod.name());
+		return expectedMethod != null ? matchRequestMethod(expectedMethod.name()) : null;
 	}
 
-	private RequestMethodsRequestCondition matchRequestMethod(String httpMethodValue) {
-		HttpMethod httpMethod = HttpMethod.resolve(httpMethodValue);
+	@Nullable
+	private RequestMethodsRequestCondition matchRequestMethod(@Nullable String httpMethod) {
 		if (httpMethod != null) {
 			for (RequestMethod method : getMethods()) {
 				if (httpMethod.matches(method.name())) {
-					return new RequestMethodsRequestCondition(method);
+					return requestMethodConditionCache.get(method.name());
 				}
 			}
-			if (httpMethod == HttpMethod.HEAD && getMethods().contains(RequestMethod.GET)) {
-				return HEAD_CONDITION;
+			if (HttpMethod.HEAD.matches(httpMethod) && getMethods().contains(RequestMethod.GET)) {
+				return requestMethodConditionCache.get(HttpMethod.GET.name());
 			}
 		}
 		return null;
@@ -156,7 +168,18 @@ public final class RequestMethodsRequestCondition extends AbstractRequestConditi
 	 */
 	@Override
 	public int compareTo(RequestMethodsRequestCondition other, ServerWebExchange exchange) {
-		return (other.methods.size() - this.methods.size());
+		if (other.methods.size() != this.methods.size()) {
+			return other.methods.size() - this.methods.size();
+		}
+		else if (this.methods.size() == 1) {
+			if (this.methods.contains(RequestMethod.HEAD) && other.methods.contains(RequestMethod.GET)) {
+				return -1;
+			}
+			else if (this.methods.contains(RequestMethod.GET) && other.methods.contains(RequestMethod.HEAD)) {
+				return 1;
+			}
+		}
+		return 0;
 	}
 
 }

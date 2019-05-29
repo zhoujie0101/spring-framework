@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -27,11 +27,11 @@ import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import javax.annotation.PostConstruct;
 
 import org.junit.After;
-import org.junit.Rule;
+import org.junit.Ignore;
 import org.junit.Test;
-import org.junit.rules.ExpectedException;
 
 import org.springframework.aop.framework.Advised;
 import org.springframework.aop.support.AopUtils;
@@ -39,6 +39,7 @@ import org.springframework.beans.factory.BeanCreationException;
 import org.springframework.beans.factory.BeanInitializationException;
 import org.springframework.beans.factory.ObjectFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.ConfigurableApplicationContext;
 import org.springframework.context.PayloadApplicationEvent;
 import org.springframework.context.annotation.AnnotationConfigApplicationContext;
@@ -60,18 +61,18 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.stereotype.Component;
 import org.springframework.util.Assert;
+import org.springframework.validation.annotation.Validated;
+import org.springframework.validation.beanvalidation.MethodValidationPostProcessor;
 
-import static org.hamcrest.Matchers.*;
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
+import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
 
 /**
  * @author Stephane Nicoll
  * @author Juergen Hoeller
  */
 public class AnnotationDrivenEventListenerTests {
-
-	@Rule
-	public final ExpectedException thrown = ExpectedException.none();
 
 	private ConfigurableApplicationContext context;
 
@@ -138,27 +139,28 @@ public class AnnotationDrivenEventListenerTests {
 		ContextEventListener listener = this.context.getBean(ContextEventListener.class);
 
 		List<Object> events = this.eventCollector.getEvents(listener);
-		assertEquals("Wrong number of initial context events", 1, events.size());
-		assertEquals(ContextRefreshedEvent.class, events.get(0).getClass());
+		assertThat(events.size()).as("Wrong number of initial context events").isEqualTo(1);
+		assertThat(events.get(0).getClass()).isEqualTo(ContextRefreshedEvent.class);
 
 		this.context.stop();
 		List<Object> eventsAfterStop = this.eventCollector.getEvents(listener);
-		assertEquals("Wrong number of context events on shutdown", 2, eventsAfterStop.size());
-		assertEquals(ContextStoppedEvent.class, eventsAfterStop.get(1).getClass());
+		assertThat(eventsAfterStop.size()).as("Wrong number of context events on shutdown").isEqualTo(2);
+		assertThat(eventsAfterStop.get(1).getClass()).isEqualTo(ContextStoppedEvent.class);
 		this.eventCollector.assertTotalEventsCount(2);
 	}
 
 	@Test
 	public void methodSignatureNoEvent() {
+		@SuppressWarnings("resource")
 		AnnotationConfigApplicationContext failingContext =
 				new AnnotationConfigApplicationContext();
 		failingContext.register(BasicConfiguration.class,
 				InvalidMethodSignatureEventListener.class);
 
-		this.thrown.expect(BeanInitializationException.class);
-		this.thrown.expectMessage(InvalidMethodSignatureEventListener.class.getName());
-		this.thrown.expectMessage("cannotBeCalled");
-		failingContext.refresh();
+		assertThatExceptionOfType(BeanInitializationException.class).isThrownBy(() ->
+				failingContext.refresh())
+			.withMessageContaining(InvalidMethodSignatureEventListener.class.getName())
+			.withMessageContaining("cannotBeCalled");
 	}
 
 	@Test
@@ -167,7 +169,6 @@ public class AnnotationDrivenEventListenerTests {
 		AnotherTestEvent event = new AnotherTestEvent(this, "dummy");
 		ReplyEventListener replyEventListener = this.context.getBean(ReplyEventListener.class);
 		TestEventListener listener = this.context.getBean(TestEventListener.class);
-
 
 		this.eventCollector.assertNoEventReceived(listener);
 		this.eventCollector.assertNoEventReceived(replyEventListener);
@@ -246,7 +247,7 @@ public class AnnotationDrivenEventListenerTests {
 		load(ScopedProxyTestBean.class);
 
 		SimpleService proxy = this.context.getBean(SimpleService.class);
-		assertTrue("bean should be a proxy", proxy instanceof Advised);
+		assertThat(proxy instanceof Advised).as("bean should be a proxy").isTrue();
 		this.eventCollector.assertNoEventReceived(proxy.getId());
 
 		this.context.publishEvent(new ContextRefreshedEvent(this.context));
@@ -263,7 +264,7 @@ public class AnnotationDrivenEventListenerTests {
 		load(AnnotatedProxyTestBean.class);
 
 		AnnotatedSimpleService proxy = this.context.getBean(AnnotatedSimpleService.class);
-		assertTrue("bean should be a proxy", proxy instanceof Advised);
+		assertThat(proxy instanceof Advised).as("bean should be a proxy").isTrue();
 		this.eventCollector.assertNoEventReceived(proxy.getId());
 
 		this.context.publishEvent(new ContextRefreshedEvent(this.context));
@@ -280,7 +281,7 @@ public class AnnotationDrivenEventListenerTests {
 		load(CglibProxyTestBean.class);
 
 		CglibProxyTestBean proxy = this.context.getBean(CglibProxyTestBean.class);
-		assertTrue("bean should be a cglib proxy", AopUtils.isCglibProxy(proxy));
+		assertThat(AopUtils.isCglibProxy(proxy)).as("bean should be a cglib proxy").isTrue();
 		this.eventCollector.assertNoEventReceived(proxy.getId());
 
 		this.context.publishEvent(new ContextRefreshedEvent(this.context));
@@ -294,13 +295,9 @@ public class AnnotationDrivenEventListenerTests {
 
 	@Test
 	public void privateMethodOnCglibProxyFails() throws Exception {
-		try {
-			load(CglibProxyWithPrivateMethod.class);
-			fail("Should have thrown BeanInitializationException");
-		}
-		catch (BeanInitializationException ex) {
-			assertTrue(ex.getCause() instanceof IllegalStateException);
-		}
+		assertThatExceptionOfType(BeanInitializationException.class).isThrownBy(() ->
+				load(CglibProxyWithPrivateMethod.class))
+			.withCauseInstanceOf(IllegalStateException.class);
 	}
 
 	@Test
@@ -310,7 +307,7 @@ public class AnnotationDrivenEventListenerTests {
 		this.context.getBeanFactory().registerScope("custom", customScope);
 
 		CustomScopeTestBean proxy = this.context.getBean(CustomScopeTestBean.class);
-		assertTrue("bean should be a cglib proxy", AopUtils.isCglibProxy(proxy));
+		assertThat(AopUtils.isCglibProxy(proxy)).as("bean should be a cglib proxy").isTrue();
 		this.eventCollector.assertNoEventReceived(proxy.getId());
 
 		this.context.publishEvent(new ContextRefreshedEvent(this.context));
@@ -326,15 +323,10 @@ public class AnnotationDrivenEventListenerTests {
 		this.eventCollector.assertEvent(proxy.getId(), event);
 		this.eventCollector.assertTotalEventsCount(1);
 
-		try {
-			customScope.active = false;
-			this.context.publishEvent(new TestEvent());
-			fail("Should have thrown IllegalStateException");
-		}
-		catch (BeanCreationException ex) {
-			// expected
-			assertTrue(ex.getCause() instanceof IllegalStateException);
-		}
+		customScope.active = false;
+		assertThatExceptionOfType(BeanCreationException.class).isThrownBy(() ->
+				this.context.publishEvent(new TestEvent()))
+			.withCauseInstanceOf(IllegalStateException.class);
 	}
 
 	@Test
@@ -388,15 +380,11 @@ public class AnnotationDrivenEventListenerTests {
 		TestEvent event = new TestEvent(this, "fail");
 		ExceptionEventListener listener = this.context.getBean(ExceptionEventListener.class);
 		this.eventCollector.assertNoEventReceived(listener);
-		try {
-			this.context.publishEvent(event);
-			fail("An exception should have thrown");
-		}
-		catch (IllegalStateException e) {
-			assertEquals("Wrong exception", "Test exception", e.getMessage());
-			this.eventCollector.assertEvent(listener, event);
-			this.eventCollector.assertTotalEventsCount(1);
-		}
+		assertThatIllegalStateException().isThrownBy(() ->
+				this.context.publishEvent(event))
+			.withMessage("Test exception");
+		this.eventCollector.assertEvent(listener, event);
+		this.eventCollector.assertTotalEventsCount(1);
 	}
 
 	@Test
@@ -488,10 +476,20 @@ public class AnnotationDrivenEventListenerTests {
 
 	@Test
 	public void conditionMatch() {
+		validateConditionMatch(ConditionalEventListener.class);
+	}
+
+	@Test
+	public void conditionMatchWithProxy() {
+		validateConditionMatch(ConditionalEventListener.class, MethodValidationPostProcessor.class);
+	}
+
+	private void validateConditionMatch(Class<?>... classes) {
 		long timestamp = System.currentTimeMillis();
-		load(ConditionalEventListener.class);
+		load(classes);
 		TestEvent event = new TestEvent(this, "OK");
-		TestEventListener listener = this.context.getBean(ConditionalEventListener.class);
+
+		ConditionalEventInterface listener = this.context.getBean(ConditionalEventInterface.class);
 		this.eventCollector.assertNoEventReceived(listener);
 
 		this.context.publishEvent(event);
@@ -500,6 +498,9 @@ public class AnnotationDrivenEventListenerTests {
 
 		this.context.publishEvent("OK");
 		this.eventCollector.assertEvent(listener, event, "OK");
+		this.eventCollector.assertTotalEventsCount(2);
+
+		this.context.publishEvent("NOT OK");
 		this.eventCollector.assertTotalEventsCount(2);
 
 		this.context.publishEvent(timestamp);
@@ -541,9 +542,17 @@ public class AnnotationDrivenEventListenerTests {
 		load(OrderedTestListener.class);
 		OrderedTestListener listener = this.context.getBean(OrderedTestListener.class);
 
-		assertTrue(listener.order.isEmpty());
+		assertThat(listener.order.isEmpty()).isTrue();
 		this.context.publishEvent("whatever");
-		assertThat(listener.order, contains("first", "second", "third"));
+		assertThat(listener.order).contains("first", "second", "third");
+	}
+
+	@Test @Ignore  // SPR-15122
+	public void listenersReceiveEarlyEvents() {
+		load(EventOnPostConstruct.class, OrderedTestListener.class);
+		OrderedTestListener listener = this.context.getBean(OrderedTestListener.class);
+
+		assertThat(listener.order).contains("first", "second", "third");
 	}
 
 
@@ -721,7 +730,7 @@ public class AnnotationDrivenEventListenerTests {
 		@EventListener
 		@Async
 		public void handleAsync(AnotherTestEvent event) {
-			assertTrue(!Thread.currentThread().getName().equals(event.content));
+			assertThat(Thread.currentThread().getName()).isNotEqualTo(event.content);
 			collectEvent(event);
 			this.countDownLatch.countDown();
 		}
@@ -768,7 +777,7 @@ public class AnnotationDrivenEventListenerTests {
 		@EventListener
 		@Async
 		public void handleAsync(AnotherTestEvent event) {
-			assertTrue(!Thread.currentThread().getName().equals(event.content));
+			assertThat(Thread.currentThread().getName()).isNotEqualTo(event.content);
 			this.eventCollector.addEvent(this, event);
 			this.countDownLatch.countDown();
 		}
@@ -794,7 +803,7 @@ public class AnnotationDrivenEventListenerTests {
 		@EventListener
 		@Async
 		public void handleAsync(AnotherTestEvent event) {
-			assertTrue(!Thread.currentThread().getName().equals(event.content));
+			assertThat(Thread.currentThread().getName()).isNotEqualTo(event.content);
 			this.eventCollector.addEvent(this, event);
 			this.countDownLatch.countDown();
 		}
@@ -885,8 +894,21 @@ public class AnnotationDrivenEventListenerTests {
 	}
 
 
+	interface ConditionalEventInterface extends Identifiable {
+
+		void handle(TestEvent event);
+
+		void handleString(String payload);
+
+		void handleTimestamp(Long timestamp);
+
+		void handleRatio(Double ratio);
+	}
+
+
 	@Component
-	static class ConditionalEventListener extends TestEventListener {
+	@Validated
+	static class ConditionalEventListener extends TestEventListener implements ConditionalEventInterface {
 
 		@EventListener(condition = "'OK'.equals(#root.event.msg)")
 		@Override
@@ -912,7 +934,7 @@ public class AnnotationDrivenEventListenerTests {
 	}
 
 
-	@Component
+	@Configuration
 	static class OrderedTestListener extends TestEventListener {
 
 		public final List<String> order = new ArrayList<>();
@@ -932,6 +954,18 @@ public class AnnotationDrivenEventListenerTests {
 		@EventListener
 		public void handleSecond(String payload) {
 			this.order.add("second");
+		}
+	}
+
+
+	static class EventOnPostConstruct {
+
+		@Autowired
+		ApplicationEventPublisher publisher;
+
+		@PostConstruct
+		public void init() {
+			this.publisher.publishEvent("earlyEvent");
 		}
 	}
 

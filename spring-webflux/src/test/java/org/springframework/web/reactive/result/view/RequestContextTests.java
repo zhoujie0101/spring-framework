@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -24,11 +24,9 @@ import org.junit.Test;
 
 import org.springframework.context.support.GenericApplicationContext;
 import org.springframework.mock.http.server.reactive.test.MockServerHttpRequest;
-import org.springframework.mock.http.server.reactive.test.MockServerHttpResponse;
-import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.adapter.DefaultServerWebExchange;
+import org.springframework.mock.web.test.server.MockServerWebExchange;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit tests for {@link RequestContext}.
@@ -36,7 +34,8 @@ import static org.junit.Assert.assertEquals;
  */
 public class RequestContextTests {
 
-	private ServerWebExchange exchange;
+	private final MockServerWebExchange exchange =
+			MockServerWebExchange.from(MockServerHttpRequest.get("/foo/path").contextPath("/foo"));
 
 	private GenericApplicationContext applicationContext;
 
@@ -45,9 +44,6 @@ public class RequestContextTests {
 
 	@Before
 	public void init() {
-		MockServerHttpRequest request = MockServerHttpRequest.get("/").contextPath("foo/").build();
-		MockServerHttpResponse response = new MockServerHttpResponse();
-		this.exchange = new DefaultServerWebExchange(request, response);
 		this.applicationContext = new GenericApplicationContext();
 		this.applicationContext.refresh();
 	}
@@ -55,7 +51,7 @@ public class RequestContextTests {
 	@Test
 	public void testGetContextUrl() throws Exception {
 		RequestContext context = new RequestContext(this.exchange, this.model, this.applicationContext);
-		assertEquals("foo/bar", context.getContextUrl("bar"));
+		assertThat(context.getContextUrl("bar")).isEqualTo("/foo/bar");
 	}
 
 	@Test
@@ -64,7 +60,7 @@ public class RequestContextTests {
 		Map<String, Object> map = new HashMap<>();
 		map.put("foo", "bar");
 		map.put("spam", "bucket");
-		assertEquals("foo/bar?spam=bucket", context.getContextUrl("{foo}?spam={spam}", map));
+		assertThat(context.getContextUrl("{foo}?spam={spam}", map)).isEqualTo("/foo/bar?spam=bucket");
 	}
 
 	@Test
@@ -73,7 +69,7 @@ public class RequestContextTests {
 		Map<String, Object> map = new HashMap<>();
 		map.put("foo", "bar baz");
 		map.put("spam", "&bucket=");
-		assertEquals("foo/bar%20baz?spam=%26bucket%3D", context.getContextUrl("{foo}?spam={spam}", map));
+		assertThat(context.getContextUrl("{foo}?spam={spam}", map)).isEqualTo("/foo/bar%20baz?spam=%26bucket%3D");
 	}
 
 }

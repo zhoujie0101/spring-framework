@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2017 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,7 @@
 
 package org.springframework.web.reactive.result.method.annotation;
 
+import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -27,7 +28,6 @@ import rx.Single;
 
 import org.springframework.core.codec.ByteBufferEncoder;
 import org.springframework.core.codec.CharSequenceEncoder;
-import org.springframework.http.ResponseEntity;
 import org.springframework.http.codec.EncoderHttpMessageWriter;
 import org.springframework.http.codec.HttpMessageWriter;
 import org.springframework.http.codec.ResourceHttpMessageWriter;
@@ -41,14 +41,15 @@ import org.springframework.web.reactive.HandlerResult;
 import org.springframework.web.reactive.accept.RequestedContentTypeResolver;
 import org.springframework.web.reactive.accept.RequestedContentTypeResolverBuilder;
 
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.web.method.ResolvableMethod.on;
 
 /**
  * Unit tests for {@link ResponseBodyResultHandler}.When adding a test also
  * consider whether the logic under test is in a parent class, then see:
  * <ul>
- * 	<li>{@code MessageWriterResultHandlerTests},
- *  <li>{@code ContentNegotiatingResultHandlerSupportTests}
+ * <li>{@code MessageWriterResultHandlerTests},
+ * <li>{@code ContentNegotiatingResultHandlerSupportTests}
  * </ul>
  *
  * @author Sebastien Deleuze
@@ -63,7 +64,7 @@ public class ResponseBodyResultHandlerTests {
 	public void setup() throws Exception {
 		List<HttpMessageWriter<?>> writerList = new ArrayList<>(5);
 		writerList.add(new EncoderHttpMessageWriter<>(new ByteBufferEncoder()));
-		writerList.add(new EncoderHttpMessageWriter<>(new CharSequenceEncoder()));
+		writerList.add(new EncoderHttpMessageWriter<>(CharSequenceEncoder.allMimeTypes()));
 		writerList.add(new ResourceHttpMessageWriter());
 		writerList.add(new EncoderHttpMessageWriter<>(new Jaxb2XmlEncoder()));
 		writerList.add(new EncoderHttpMessageWriter<>(new Jackson2JsonEncoder()));
@@ -73,35 +74,51 @@ public class ResponseBodyResultHandlerTests {
 
 
 	@Test
-	public void supports() throws NoSuchMethodException {
+	public void supports() {
 		Object controller = new TestController();
-		testSupports(controller, "handleToString", true);
-		testSupports(controller, "doWork", false);
+		Method method;
 
-		controller = new TestRestController();
-		testSupports(controller, "handleToString", true);
-		testSupports(controller, "handleToMonoString", true);
-		testSupports(controller, "handleToSingleString", true);
-		testSupports(controller, "handleToCompletable", true);
-		testSupports(controller, "handleToResponseEntity", false);
-		testSupports(controller, "handleToMonoResponseEntity", false);
-	}
+		method = on(TestController.class).annotPresent(ResponseBody.class).resolveMethod();
+		testSupports(controller, method);
 
-	private void testSupports(Object controller, String method, boolean result) throws NoSuchMethodException {
-		HandlerMethod hm = handlerMethod(controller, method);
-		HandlerResult handlerResult = new HandlerResult(hm, null, hm.getReturnType());
-		assertEquals(result, this.resultHandler.supports(handlerResult));
+		method = on(TestController.class).annotNotPresent(ResponseBody.class).resolveMethod("doWork");
+		HandlerResult handlerResult = getHandlerResult(controller, method);
+		assertThat(this.resultHandler.supports(handlerResult)).isFalse();
 	}
 
 	@Test
-	public void defaultOrder() throws Exception {
-		assertEquals(100, this.resultHandler.getOrder());
+	public void supportsRestController() {
+		Object controller = new TestRestController();
+		Method method;
+
+		method = on(TestRestController.class).returning(String.class).resolveMethod();
+		testSupports(controller, method);
+
+		method = on(TestRestController.class).returning(Mono.class, String.class).resolveMethod();
+		testSupports(controller, method);
+
+		method = on(TestRestController.class).returning(Single.class, String.class).resolveMethod();
+		testSupports(controller, method);
+
+		method = on(TestRestController.class).returning(Completable.class).resolveMethod();
+		testSupports(controller, method);
 	}
 
-
-	private HandlerMethod handlerMethod(Object controller, String method) throws NoSuchMethodException {
-		return new HandlerMethod(controller, controller.getClass().getMethod(method));
+	private void testSupports(Object controller, Method method) {
+		HandlerResult handlerResult = getHandlerResult(controller, method);
+		assertThat(this.resultHandler.supports(handlerResult)).isTrue();
 	}
+
+	private HandlerResult getHandlerResult(Object controller, Method method) {
+		HandlerMethod handlerMethod = new HandlerMethod(controller, method);
+		return new HandlerResult(handlerMethod, null, handlerMethod.getReturnType());
+	}
+
+	@Test
+	public void defaultOrder() {
+		assertThat(this.resultHandler.getOrder()).isEqualTo(100);
+	}
+
 
 
 	@RestController
@@ -123,14 +140,6 @@ public class ResponseBodyResultHandlerTests {
 		}
 
 		public Completable handleToCompletable() {
-			return null;
-		}
-
-		public ResponseEntity<String> handleToResponseEntity() {
-			return null;
-		}
-
-		public Mono<ResponseEntity<String>> handleToMonoResponseEntity() {
 			return null;
 		}
 	}

@@ -5,7 +5,7 @@
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -26,6 +26,7 @@ import java.util.concurrent.RejectedExecutionException;
 import org.springframework.core.task.AsyncListenableTaskExecutor;
 import org.springframework.core.task.TaskDecorator;
 import org.springframework.core.task.TaskRejectedException;
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 import org.springframework.util.concurrent.ListenableFuture;
 import org.springframework.util.concurrent.ListenableFutureTask;
@@ -46,6 +47,7 @@ public class TaskExecutorAdapter implements AsyncListenableTaskExecutor {
 
 	private final Executor concurrentExecutor;
 
+	@Nullable
 	private TaskDecorator taskDecorator;
 
 
@@ -167,7 +169,7 @@ public class TaskExecutorAdapter implements AsyncListenableTaskExecutor {
 	 * @throws RejectedExecutionException if the given runnable cannot be accepted
 	 * @since 4.3
 	 */
-	protected void doExecute(Executor concurrentExecutor, TaskDecorator taskDecorator, Runnable runnable)
+	protected void doExecute(Executor concurrentExecutor, @Nullable TaskDecorator taskDecorator, Runnable runnable)
 			throws RejectedExecutionException{
 
 		concurrentExecutor.execute(taskDecorator != null ? taskDecorator.decorate(runnable) : runnable);

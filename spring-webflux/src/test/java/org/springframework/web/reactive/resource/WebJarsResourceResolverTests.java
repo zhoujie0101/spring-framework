@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,6 +16,7 @@
 
 package org.springframework.web.reactive.resource;
 
+import java.time.Duration;
 import java.util.List;
 
 import org.junit.Before;
@@ -24,20 +25,17 @@ import reactor.core.publisher.Mono;
 
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.core.io.Resource;
-import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.mock.http.server.reactive.test.MockServerHttpRequest;
-import org.springframework.mock.http.server.reactive.test.MockServerHttpResponse;
+import org.springframework.mock.web.test.server.MockServerWebExchange;
 import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.adapter.DefaultServerWebExchange;
 
 import static java.util.Collections.singletonList;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNull;
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.BDDMockito.given;
-import static org.mockito.BDDMockito.mock;
-import static org.mockito.BDDMockito.never;
-import static org.mockito.BDDMockito.times;
-import static org.mockito.BDDMockito.verify;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 
 /**
  * Unit tests for {@link WebJarsResourceResolver}.
@@ -46,6 +44,9 @@ import static org.mockito.BDDMockito.verify;
  * @author Brian Clozel
  */
 public class WebJarsResourceResolverTests {
+
+	private static final Duration TIMEOUT = Duration.ofSeconds(1);
+
 
 	private List<Resource> locations;
 
@@ -62,10 +63,7 @@ public class WebJarsResourceResolverTests {
 		this.locations = singletonList(new ClassPathResource("/META-INF/resources/webjars"));
 		this.resolver = new WebJarsResourceResolver();
 		this.chain = mock(ResourceResolverChain.class);
-
-		MockServerHttpRequest request = MockServerHttpRequest.get("").build();
-		ServerHttpResponse response = new MockServerHttpResponse();
-		this.exchange = new DefaultServerWebExchange(request, response);
+		this.exchange = MockServerWebExchange.from(MockServerHttpRequest.get(""));
 	}
 
 
@@ -75,9 +73,9 @@ public class WebJarsResourceResolverTests {
 		String file = "/foo/2.3/foo.txt";
 		given(this.chain.resolveUrlPath(file, this.locations)).willReturn(Mono.just(file));
 
-		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).blockMillis(5000);
+		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).block(TIMEOUT);
 
-		assertEquals(file, actual);
+		assertThat(actual).isEqualTo(file);
 		verify(this.chain, times(1)).resolveUrlPath(file, this.locations);
 	}
 
@@ -87,9 +85,9 @@ public class WebJarsResourceResolverTests {
 		String file = "foo/foo.txt";
 		given(this.chain.resolveUrlPath(file, this.locations)).willReturn(Mono.empty());
 
-		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).blockMillis(5000);
+		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).block(TIMEOUT);
 
-		assertNull(actual);
+		assertThat(actual).isNull();
 		verify(this.chain, times(1)).resolveUrlPath(file, this.locations);
 		verify(this.chain, never()).resolveUrlPath("foo/2.3/foo.txt", this.locations);
 	}
@@ -101,9 +99,9 @@ public class WebJarsResourceResolverTests {
 		given(this.chain.resolveUrlPath(file, this.locations)).willReturn(Mono.empty());
 		given(this.chain.resolveUrlPath(expected, this.locations)).willReturn(Mono.just(expected));
 
-		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).blockMillis(5000);
+		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).block(TIMEOUT);
 
-		assertEquals(expected, actual);
+		assertThat(actual).isEqualTo(expected);
 		verify(this.chain, times(1)).resolveUrlPath(file, this.locations);
 		verify(this.chain, times(1)).resolveUrlPath(expected, this.locations);
 	}
@@ -113,9 +111,9 @@ public class WebJarsResourceResolverTests {
 		String file = "something/something.js";
 		given(this.chain.resolveUrlPath(file, this.locations)).willReturn(Mono.empty());
 
-		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).blockMillis(5000);
+		String actual = this.resolver.resolveUrlPath(file, this.locations, this.chain).block(TIMEOUT);
 
-		assertNull(actual);
+		assertThat(actual).isNull();
 		verify(this.chain, times(1)).resolveUrlPath(file, this.locations);
 		verify(this.chain, never()).resolveUrlPath(null, this.locations);
 	}
@@ -129,9 +127,9 @@ public class WebJarsResourceResolverTests {
 
 		Resource actual = this.resolver
 				.resolveResource(this.exchange, file, this.locations, this.chain)
-				.blockMillis(5000);
+				.block(TIMEOUT);
 
-		assertEquals(expected, actual);
+		assertThat(actual).isEqualTo(expected);
 		verify(this.chain, times(1)).resolveResource(this.exchange, file, this.locations);
 	}
 
@@ -142,9 +140,9 @@ public class WebJarsResourceResolverTests {
 
 		Resource actual = this.resolver
 				.resolveResource(this.exchange, file, this.locations, this.chain)
-				.blockMillis(5000);
+				.block(TIMEOUT);
 
-		assertNull(actual);
+		assertThat(actual).isNull();
 		verify(this.chain, times(1)).resolveResource(this.exchange, file, this.locations);
 		verify(this.chain, never()).resolveResource(this.exchange, null, this.locations);
 	}
@@ -164,9 +162,9 @@ public class WebJarsResourceResolverTests {
 
 		Resource actual = this.resolver
 				.resolveResource(this.exchange, file, this.locations, this.chain)
-				.blockMillis(5000);
+				.block(TIMEOUT);
 
-		assertEquals(expected, actual);
+		assertThat(actual).isEqualTo(expected);
 		verify(this.chain, times(1)).resolveResource(this.exchange, file, this.locations);
 	}
 

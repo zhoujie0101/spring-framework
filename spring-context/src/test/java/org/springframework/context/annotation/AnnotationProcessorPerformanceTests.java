@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2015 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -20,12 +20,10 @@ import javax.annotation.Resource;
 
 import org.apache.commons.logging.Log;
 import org.apache.commons.logging.LogFactory;
-
-import org.junit.Before;
+import org.junit.BeforeClass;
 import org.junit.Test;
 
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Required;
 import org.springframework.beans.factory.config.RuntimeBeanReference;
 import org.springframework.beans.factory.support.DefaultListableBeanFactory;
 import org.springframework.beans.factory.support.RootBeanDefinition;
@@ -36,7 +34,7 @@ import org.springframework.tests.sample.beans.ITestBean;
 import org.springframework.tests.sample.beans.TestBean;
 import org.springframework.util.StopWatch;
 
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * @author Juergen Hoeller
@@ -47,8 +45,8 @@ public class AnnotationProcessorPerformanceTests {
 
 	private static final Log factoryLog = LogFactory.getLog(DefaultListableBeanFactory.class);
 
-	@Before
-	public void commonAssumptions() {
+	@BeforeClass
+	public static void commonAssumptions() {
 		Assume.group(TestGroup.PERFORMANCE);
 		Assume.notLogging(factoryLog);
 	}
@@ -68,10 +66,10 @@ public class AnnotationProcessorPerformanceTests {
 		sw.start("prototype");
 		for (int i = 0; i < 100000; i++) {
 			TestBean tb = (TestBean) ctx.getBean("test");
-			assertSame(spouse, tb.getSpouse());
+			assertThat(tb.getSpouse()).isSameAs(spouse);
 		}
 		sw.stop();
-		assertTrue("Prototype creation took too long: " + sw.getTotalTimeMillis(), sw.getTotalTimeMillis() < 4000);
+		assertThat(sw.getTotalTimeMillis() < 4000).as("Prototype creation took too long: " + sw.getTotalTimeMillis()).isTrue();
 	}
 
 	@Test
@@ -90,10 +88,10 @@ public class AnnotationProcessorPerformanceTests {
 		sw.start("prototype");
 		for (int i = 0; i < 100000; i++) {
 			TestBean tb = (TestBean) ctx.getBean("test");
-			assertSame(spouse, tb.getSpouse());
+			assertThat(tb.getSpouse()).isSameAs(spouse);
 		}
 		sw.stop();
-		assertTrue("Prototype creation took too long: " + sw.getTotalTimeMillis(), sw.getTotalTimeMillis() < 4000);
+		assertThat(sw.getTotalTimeMillis() < 4000).as("Prototype creation took too long: " + sw.getTotalTimeMillis()).isTrue();
 	}
 
 	@Test
@@ -111,10 +109,10 @@ public class AnnotationProcessorPerformanceTests {
 		sw.start("prototype");
 		for (int i = 0; i < 100000; i++) {
 			TestBean tb = (TestBean) ctx.getBean("test");
-			assertSame(spouse, tb.getSpouse());
+			assertThat(tb.getSpouse()).isSameAs(spouse);
 		}
 		sw.stop();
-		assertTrue("Prototype creation took too long: " + sw.getTotalTimeMillis(), sw.getTotalTimeMillis() < 4000);
+		assertThat(sw.getTotalTimeMillis() < 4000).as("Prototype creation took too long: " + sw.getTotalTimeMillis()).isTrue();
 	}
 
 	@Test
@@ -133,17 +131,19 @@ public class AnnotationProcessorPerformanceTests {
 		sw.start("prototype");
 		for (int i = 0; i < 100000; i++) {
 			TestBean tb = (TestBean) ctx.getBean("test");
-			assertSame(spouse, tb.getSpouse());
+			assertThat(tb.getSpouse()).isSameAs(spouse);
 		}
 		sw.stop();
-		assertTrue("Prototype creation took too long: " + sw.getTotalTimeMillis(), sw.getTotalTimeMillis() < 6000);
+		assertThat(sw.getTotalTimeMillis() < 6000).as("Prototype creation took too long: " + sw.getTotalTimeMillis()).isTrue();
 	}
 
 
 	private static class ResourceAnnotatedTestBean extends TestBean {
 
 		@Override
-		@Resource @Required
+		@Resource
+		@SuppressWarnings("deprecation")
+		@org.springframework.beans.factory.annotation.Required
 		public void setSpouse(ITestBean spouse) {
 			super.setSpouse(spouse);
 		}
@@ -152,7 +152,9 @@ public class AnnotationProcessorPerformanceTests {
 	private static class AutowiredAnnotatedTestBean extends TestBean {
 
 		@Override
-		@Autowired @Required
+		@Autowired
+		@SuppressWarnings("deprecation")
+		@org.springframework.beans.factory.annotation.Required
 		public void setSpouse(ITestBean spouse) {
 			super.setSpouse(spouse);
 		}

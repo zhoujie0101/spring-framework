@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -16,24 +16,19 @@
 
 package org.springframework.web.reactive.config;
 
-import java.util.List;
-import java.util.Optional;
-
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.format.Formatter;
 import org.springframework.format.FormatterRegistry;
-import org.springframework.http.codec.HttpMessageReader;
-import org.springframework.http.codec.HttpMessageWriter;
+import org.springframework.http.codec.ServerCodecConfigurer;
+import org.springframework.lang.Nullable;
 import org.springframework.validation.MessageCodesResolver;
 import org.springframework.validation.Validator;
-import org.springframework.web.reactive.accept.CompositeContentTypeResolver;
-import org.springframework.web.reactive.accept.RequestedContentTypeResolver;
 import org.springframework.web.reactive.accept.RequestedContentTypeResolverBuilder;
-import org.springframework.web.reactive.result.method.HandlerMethodArgumentResolver;
+import org.springframework.web.reactive.result.method.annotation.ArgumentResolverConfigurer;
 
 /**
- * Defines callback methods to customize the configuration for Web Reactive
- * applications enabled via {@code @EnableWebFlux}.
+ * Defines callback methods to customize the configuration for WebFlux
+ * applications enabled via {@link EnableWebFlux @EnableWebFlux}.
  *
  * <p>{@code @EnableWebFlux}-annotated configuration classes may implement
  * this interface to be called back and given a chance to customize the
@@ -43,22 +38,25 @@ import org.springframework.web.reactive.result.method.HandlerMethodArgumentResol
  * @author Brian Clozel
  * @author Rossen Stoyanchev
  * @since 5.0
+ * @see WebFluxConfigurationSupport
+ * @see DelegatingWebFluxConfiguration
  */
 public interface WebFluxConfigurer {
 
 	/**
-	 * Configure how the content type requested for the response is resolved.
-	 * <p>The given builder will create a composite of multiple
-	 * {@link RequestedContentTypeResolver}s, each defining a way to resolve
-	 * the requested content type (accept HTTP header, path extension,
-	 * parameter, etc).
-	 * @param builder factory that creates a {@link CompositeContentTypeResolver}
+	 * Configure how the content type requested for the response is resolved
+	 * when handling requests with annotated controllers.
+	 * @param builder for configuring the resolvers to use
 	 */
 	default void configureContentTypeResolver(RequestedContentTypeResolverBuilder builder) {
 	}
 
 	/**
-	 * Configure cross origin requests processing.
+	 * Configure "global" cross origin request processing.
+	 * <p>The configured readers and writers will apply to all requests including
+	 * annotated controllers and functional endpoints. Annotated controllers can
+	 * further declare more fine-grained configuration via
+	 * {@link org.springframework.web.bind.annotation.CrossOrigin @CrossOrigin}.
 	 * @see CorsRegistry
 	 */
 	default void addCorsMappings(CorsRegistry registry) {
@@ -66,8 +64,9 @@ public interface WebFluxConfigurer {
 
 	/**
 	 * Configure path matching options.
-	 * <p>The given configurer assists with configuring
-	 * {@code HandlerMapping}s with path matching options.
+	 * <p>The configured path matching options will be used for mapping to
+	 * annotated controllers and also
+	 * {@link #addResourceHandlers(ResourceHandlerRegistry) static resources}.
 	 * @param configurer the {@link PathMatchConfigurer} instance
 	 */
 	default void configurePathMatching(PathMatchConfigurer configurer) {
@@ -81,35 +80,24 @@ public interface WebFluxConfigurer {
 	}
 
 	/**
-	 * Provide custom controller method argument resolvers. Such resolvers do
-	 * not override and will be invoked after the built-in ones.
-	 * @param resolvers a list of resolvers to add
+	 * Configure resolvers for custom {@code @RequestMapping} method arguments.
+	 * @param configurer to configurer to use
 	 */
-	default void addArgumentResolvers(List<HandlerMethodArgumentResolver> resolvers) {
+	default void configureArgumentResolvers(ArgumentResolverConfigurer configurer) {
 	}
 
 	/**
-	 * Configure the message readers to use for decoding the request body where
-	 * {@code @RequestBody} and {@code HttpEntity} controller method arguments
-	 * are used. If none are specified, default ones are added based on
-	 * {@link WebFluxConfigurationSupport#addDefaultHttpMessageReaders}.
-	 * <p>See {@link #extendMessageReaders(List)} for adding readers
-	 * in addition to the default ones.
-	 * @param readers an empty list to add message readers to
+	 * Configure custom HTTP message readers and writers or override built-in ones.
+	 * <p>The configured readers and writers will be used for both annotated
+	 * controllers and functional endpoints.
+	 * @param configurer the configurer to use
 	 */
-	default void configureMessageReaders(List<HttpMessageReader<?>> readers) {
+	default void configureHttpMessageCodecs(ServerCodecConfigurer configurer) {
 	}
 
 	/**
-	 * An alternative to {@link #configureMessageReaders(List)} that allows
-	 * modifying the message readers to use after default ones have been added.
-	 */
-	default void extendMessageReaders(List<HttpMessageReader<?>> readers) {
-	}
-
-	/**
-	 * Add custom {@link Converter}s and {@link Formatter}s for performing type
-	 * conversion and formatting of controller method arguments.
+	 * Add custom {@link Converter Converters} and {@link Formatter Formatters} for
+	 * performing type conversion and formatting of annotated controller method arguments.
 	 */
 	default void addFormatters(FormatterRegistry registry) {
 	}
@@ -117,49 +105,31 @@ public interface WebFluxConfigurer {
 	/**
 	 * Provide a custom {@link Validator}.
 	 * <p>By default a validator for standard bean validation is created if
-	 * bean validation api is present on the classpath.
+	 * bean validation API is present on the classpath.
+	 * <p>The configured validator is used for validating annotated controller
+	 * method arguments.
 	 */
-	default Optional<Validator> getValidator() {
-		return Optional.empty();
+	@Nullable
+	default Validator getValidator() {
+		return null;
 	}
 
 	/**
-	 * Provide a custom {@link MessageCodesResolver} to use for data binding
-	 * instead of the one created by default in
-	 * {@link org.springframework.validation.DataBinder}.
+	 * Provide a custom {@link MessageCodesResolver} to use for data binding in
+	 * annotated controller method arguments instead of the one created by
+	 * default in {@link org.springframework.validation.DataBinder}.
 	 */
-	default Optional<MessageCodesResolver> getMessageCodesResolver() {
-		return Optional.empty();
+	@Nullable
+	default MessageCodesResolver getMessageCodesResolver() {
+		return null;
 	}
 
 	/**
-	 * Configure the message writers to use to encode the response body based on
-	 * the return values of {@code @ResponseBody}, and {@code ResponseEntity}
-	 * controller methods. If none are specified, default ones are added based on
-	 * {@link WebFluxConfigurationSupport#addDefaultHttpMessageWriters(List)}.
-	 * <p>See {@link #extendMessageWriters(List)} for adding writers
-	 * in addition to the default ones.
-	 * @param writers a empty list to add message writers to
-	 */
-	default void configureMessageWriters(List<HttpMessageWriter<?>> writers) {
-	}
-
-	/**
-	 * An alternative to {@link #configureMessageWriters(List)} that allows
-	 * modifying the message writers to use after default ones have been added.
-	 */
-	default void extendMessageWriters(List<HttpMessageWriter<?>> writers) {
-	}
-
-	/**
-	 * Configure view resolution for processing the return values of controller
-	 * methods that rely on resolving a
-	 * {@link org.springframework.web.reactive.result.view.View} to render
-	 * the response with. By default all controller methods rely on view
-	 * resolution unless annotated with {@code @ResponseBody} or explicitly
-	 * return {@code ResponseEntity}. A view may be specified explicitly with
-	 * a String return value or implicitly, e.g. {@code void} return value.
-	 * @see ViewResolverRegistry
+	 * Configure view resolution for rendering responses with a view and a model,
+	 * where the view is typically an HTML template but could also be based on
+	 * an HTTP message writer (e.g. JSON, XML).
+	 * <p>The configured view resolvers will be used for both annotated
+	 * controllers and functional endpoints.
 	 */
 	default void configureViewResolvers(ViewResolverRegistry registry) {
 	}

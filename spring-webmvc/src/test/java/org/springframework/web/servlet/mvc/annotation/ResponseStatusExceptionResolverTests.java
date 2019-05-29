@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -35,7 +35,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.servlet.ModelAndView;
 
-import static org.junit.Assert.*;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Integration tests for {@link ResponseStatusExceptionResolver}.
@@ -91,7 +91,7 @@ public class ResponseStatusExceptionResolverTests {
 
 			StatusCodeAndReasonMessageException ex = new StatusCodeAndReasonMessageException();
 			exceptionResolver.resolveException(request, response, null, ex);
-			assertEquals("Invalid status reason", "Gone reason message", response.getErrorMessage());
+			assertThat(response.getErrorMessage()).as("Invalid status reason").isEqualTo("Gone reason message");
 		}
 		finally {
 			LocaleContextHolder.resetLocaleContext();
@@ -103,7 +103,7 @@ public class ResponseStatusExceptionResolverTests {
 		Exception ex = new Exception();
 		exceptionResolver.resolveException(request, response, null, ex);
 		ModelAndView mav = exceptionResolver.resolveException(request, response, null, ex);
-		assertNull("ModelAndView returned", mav);
+		assertThat(mav).as("ModelAndView returned").isNull();
 	}
 
 	@Test // SPR-12903
@@ -111,24 +111,29 @@ public class ResponseStatusExceptionResolverTests {
 		Exception cause = new StatusCodeAndReasonMessageException();
 		TypeMismatchException ex = new TypeMismatchException("value", ITestBean.class, cause);
 		ModelAndView mav = exceptionResolver.resolveException(request, response, null, ex);
-		assertResolved(mav, 410, null);
+		assertResolved(mav, 410, "gone.reason");
 	}
 
 	@Test
 	public void responseStatusException() throws Exception {
-		ResponseStatusException ex = new ResponseStatusException(HttpStatus.BAD_REQUEST, "The reason");
+		ResponseStatusException ex = new ResponseStatusException(HttpStatus.BAD_REQUEST);
 		ModelAndView mav = exceptionResolver.resolveException(request, response, null, ex);
 		assertResolved(mav, 400, null);
 	}
 
+	@Test  // SPR-15524
+	public void responseStatusExceptionWithReason() throws Exception {
+		ResponseStatusException ex = new ResponseStatusException(HttpStatus.BAD_REQUEST, "The reason");
+		ModelAndView mav = exceptionResolver.resolveException(request, response, null, ex);
+		assertResolved(mav, 400, "The reason");
+	}
+
 
 	private void assertResolved(ModelAndView mav, int status, String reason) {
-		assertTrue("No Empty ModelAndView returned", mav != null && mav.isEmpty());
-		assertEquals(status, response.getStatus());
-		if (reason != null) {
-			assertEquals(reason, response.getErrorMessage());
-		}
-		assertTrue(response.isCommitted());
+		assertThat(mav != null && mav.isEmpty()).as("No Empty ModelAndView returned").isTrue();
+		assertThat(response.getStatus()).isEqualTo(status);
+		assertThat(response.getErrorMessage()).isEqualTo(reason);
+		assertThat(response.isCommitted()).isTrue();
 	}
 
 

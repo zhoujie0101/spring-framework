@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2017 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,6 +17,7 @@
 package org.springframework.web.reactive.result.method.annotation;
 
 import java.net.URISyntaxException;
+import java.time.Duration;
 import java.util.Map;
 import java.util.function.Function;
 
@@ -31,7 +32,7 @@ import org.springframework.core.MethodParameter;
 import org.springframework.core.ReactiveAdapterRegistry;
 import org.springframework.http.MediaType;
 import org.springframework.mock.http.server.reactive.test.MockServerHttpRequest;
-import org.springframework.mock.http.server.reactive.test.MockServerHttpResponse;
+import org.springframework.mock.web.test.server.MockServerWebExchange;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.annotation.Validated;
 import org.springframework.validation.beanvalidation.LocalValidatorFactoryBean;
@@ -41,18 +42,14 @@ import org.springframework.web.bind.support.WebExchangeBindException;
 import org.springframework.web.method.ResolvableMethod;
 import org.springframework.web.reactive.BindingContext;
 import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.adapter.DefaultServerWebExchange;
 
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertFalse;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertSame;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit tests for {@link ModelAttributeMethodArgumentResolver}.
  *
  * @author Rossen Stoyanchev
+ * @author Juergen Hoeller
  */
 public class ModelAttributeMethodArgumentResolverTests {
 
@@ -74,71 +71,71 @@ public class ModelAttributeMethodArgumentResolverTests {
 	@Test
 	public void supports() throws Exception {
 		ModelAttributeMethodArgumentResolver resolver =
-				new ModelAttributeMethodArgumentResolver(new ReactiveAdapterRegistry(), false);
+				new ModelAttributeMethodArgumentResolver(ReactiveAdapterRegistry.getSharedInstance(), false);
 
 		MethodParameter param = this.testMethod.annotPresent(ModelAttribute.class).arg(Foo.class);
-		assertTrue(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isTrue();
 
 		param = this.testMethod.annotPresent(ModelAttribute.class).arg(Mono.class, Foo.class);
-		assertTrue(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isTrue();
 
 		param = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Foo.class);
-		assertFalse(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isFalse();
 
 		param = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Mono.class, Foo.class);
-		assertFalse(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isFalse();
 	}
 
 	@Test
 	public void supportsWithDefaultResolution() throws Exception {
 		ModelAttributeMethodArgumentResolver resolver =
-				new ModelAttributeMethodArgumentResolver(new ReactiveAdapterRegistry(), true);
+				new ModelAttributeMethodArgumentResolver(ReactiveAdapterRegistry.getSharedInstance(), true);
 
 		MethodParameter param = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Foo.class);
-		assertTrue(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isTrue();
 
 		param = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Mono.class, Foo.class);
-		assertTrue(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isTrue();
 
 		param = this.testMethod.annotNotPresent(ModelAttribute.class).arg(String.class);
-		assertFalse(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isFalse();
 
 		param = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Mono.class, String.class);
-		assertFalse(resolver.supportsParameter(param));
+		assertThat(resolver.supportsParameter(param)).isFalse();
 	}
 
 	@Test
 	public void createAndBind() throws Exception {
-		testBindFoo(this.testMethod.annotPresent(ModelAttribute.class).arg(Foo.class), value -> {
-			assertEquals(Foo.class, value.getClass());
+		testBindFoo("foo", this.testMethod.annotPresent(ModelAttribute.class).arg(Foo.class), value -> {
+			assertThat(value.getClass()).isEqualTo(Foo.class);
 			return (Foo) value;
 		});
 	}
 
 	@Test
 	public void createAndBindToMono() throws Exception {
-
 		MethodParameter parameter = this.testMethod
 				.annotNotPresent(ModelAttribute.class).arg(Mono.class, Foo.class);
 
-		testBindFoo(parameter, mono -> {
-			assertTrue(mono.getClass().getName(), mono instanceof Mono);
-			Object value = ((Mono<?>) mono).blockMillis(5000);
-			assertEquals(Foo.class, value.getClass());
+		testBindFoo("fooMono", parameter, mono -> {
+			boolean condition = mono instanceof Mono;
+			assertThat(condition).as(mono.getClass().getName()).isTrue();
+			Object value = ((Mono<?>) mono).block(Duration.ofSeconds(5));
+			assertThat(value.getClass()).isEqualTo(Foo.class);
 			return (Foo) value;
 		});
 	}
 
 	@Test
 	public void createAndBindToSingle() throws Exception {
-
 		MethodParameter parameter = this.testMethod
 				.annotPresent(ModelAttribute.class).arg(Single.class, Foo.class);
 
-		testBindFoo(parameter, single -> {
-			assertTrue(single.getClass().getName(), single instanceof Single);
+		testBindFoo("fooSingle", parameter, single -> {
+			boolean condition = single instanceof Single;
+			assertThat(condition).as(single.getClass().getName()).isTrue();
 			Object value = ((Single<?>) single).toBlocking().value();
-			assertEquals(Foo.class, value.getClass());
+			assertThat(value.getClass()).isEqualTo(Foo.class);
 			return (Foo) value;
 		});
 	}
@@ -150,77 +147,82 @@ public class ModelAttributeMethodArgumentResolverTests {
 		this.bindContext.getModel().addAttribute(foo);
 
 		MethodParameter parameter = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Foo.class);
-		testBindFoo(parameter, value -> {
-			assertEquals(Foo.class, value.getClass());
+		testBindFoo("foo", parameter, value -> {
+			assertThat(value.getClass()).isEqualTo(Foo.class);
 			return (Foo) value;
 		});
 
-		assertSame(foo, this.bindContext.getModel().asMap().get("foo"));
+		assertThat(this.bindContext.getModel().asMap().get("foo")).isSameAs(foo);
 	}
 
 	@Test
 	public void bindExistingMono() throws Exception {
 		Foo foo = new Foo();
 		foo.setName("Jim");
-		this.bindContext.getModel().addAttribute("foo", Mono.just(foo));
+		this.bindContext.getModel().addAttribute("fooMono", Mono.just(foo));
 
 		MethodParameter parameter = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Foo.class);
-		testBindFoo(parameter, value -> {
-			assertEquals(Foo.class, value.getClass());
+		testBindFoo("foo", parameter, value -> {
+			assertThat(value.getClass()).isEqualTo(Foo.class);
 			return (Foo) value;
 		});
 
-		assertSame(foo, this.bindContext.getModel().asMap().get("foo"));
+		assertThat(this.bindContext.getModel().asMap().get("foo")).isSameAs(foo);
 	}
 
 	@Test
 	public void bindExistingSingle() throws Exception {
 		Foo foo = new Foo();
 		foo.setName("Jim");
-		this.bindContext.getModel().addAttribute("foo", Single.just(foo));
+		this.bindContext.getModel().addAttribute("fooSingle", Single.just(foo));
 
 		MethodParameter parameter = this.testMethod.annotNotPresent(ModelAttribute.class).arg(Foo.class);
-		testBindFoo(parameter, value -> {
-			assertEquals(Foo.class, value.getClass());
+		testBindFoo("foo", parameter, value -> {
+			assertThat(value.getClass()).isEqualTo(Foo.class);
 			return (Foo) value;
 		});
 
-		assertSame(foo, this.bindContext.getModel().asMap().get("foo"));
+		assertThat(this.bindContext.getModel().asMap().get("foo")).isSameAs(foo);
 	}
 
 	@Test
 	public void bindExistingMonoToMono() throws Exception {
 		Foo foo = new Foo();
 		foo.setName("Jim");
-		this.bindContext.getModel().addAttribute("foo", Mono.just(foo));
+		String modelKey = "fooMono";
+		this.bindContext.getModel().addAttribute(modelKey, Mono.just(foo));
 
 		MethodParameter parameter = this.testMethod
 				.annotNotPresent(ModelAttribute.class).arg(Mono.class, Foo.class);
 
-		testBindFoo(parameter, mono -> {
-			assertTrue(mono.getClass().getName(), mono instanceof Mono);
-			Object value = ((Mono<?>) mono).blockMillis(5000);
-			assertEquals(Foo.class, value.getClass());
+		testBindFoo(modelKey, parameter, mono -> {
+			boolean condition = mono instanceof Mono;
+			assertThat(condition).as(mono.getClass().getName()).isTrue();
+			Object value = ((Mono<?>) mono).block(Duration.ofSeconds(5));
+			assertThat(value.getClass()).isEqualTo(Foo.class);
 			return (Foo) value;
 		});
 	}
 
-	private void testBindFoo(MethodParameter param, Function<Object, Foo> valueExtractor) throws Exception {
+	private void testBindFoo(String modelKey, MethodParameter param, Function<Object, Foo> valueExtractor)
+			throws Exception {
+
 		Object value = createResolver()
-				.resolveArgument(param, this.bindContext, exchange("name=Robert&age=25"))
-				.blockMillis(0);
+				.resolveArgument(param, this.bindContext, postForm("name=Robert&age=25"))
+				.block(Duration.ZERO);
 
 		Foo foo = valueExtractor.apply(value);
-		assertEquals("Robert", foo.getName());
+		assertThat(foo.getName()).isEqualTo("Robert");
+		assertThat(foo.getAge()).isEqualTo(25);
 
-		String key = "foo";
-		String bindingResultKey = BindingResult.MODEL_KEY_PREFIX + key;
+		String bindingResultKey = BindingResult.MODEL_KEY_PREFIX + modelKey;
 
 		Map<String, Object> map = bindContext.getModel().asMap();
-		assertEquals(map.toString(), 2, map.size());
-		assertSame(foo, map.get(key));
-		assertNotNull(map.get(bindingResultKey));
-		assertTrue(map.get(bindingResultKey) instanceof BindingResult);
+		assertThat(map.size()).as(map.toString()).isEqualTo(2);
+		assertThat(map.get(modelKey)).isSameAs(foo);
+		assertThat(map.get(bindingResultKey)).isNotNull();
+		boolean condition = map.get(bindingResultKey) instanceof BindingResult;
+		assertThat(condition).isTrue();
 	}
 
 	@Test
@@ -230,64 +232,90 @@ public class ModelAttributeMethodArgumentResolverTests {
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
 	public void validationErrorToMono() throws Exception {
-
 		MethodParameter parameter = this.testMethod
 				.annotNotPresent(ModelAttribute.class).arg(Mono.class, Foo.class);
 
 		testValidationError(parameter,
 				resolvedArgumentMono -> {
-					Object value = resolvedArgumentMono.blockMillis(5000);
-					assertNotNull(value);
-					assertTrue(value instanceof Mono);
+					Object value = resolvedArgumentMono.block(Duration.ofSeconds(5));
+					assertThat(value).isNotNull();
+					boolean condition = value instanceof Mono;
+					assertThat(condition).isTrue();
 					return (Mono<?>) value;
 				});
 	}
 
 	@Test
-	@SuppressWarnings("unchecked")
 	public void validationErrorToSingle() throws Exception {
-
 		MethodParameter parameter = this.testMethod
 				.annotPresent(ModelAttribute.class).arg(Single.class, Foo.class);
 
 		testValidationError(parameter,
 				resolvedArgumentMono -> {
-					Object value = resolvedArgumentMono.blockMillis(5000);
-					assertNotNull(value);
-					assertTrue(value instanceof Single);
-					return Mono.from(RxReactiveStreams.toPublisher((Single) value));
+					Object value = resolvedArgumentMono.block(Duration.ofSeconds(5));
+					assertThat(value).isNotNull();
+					boolean condition = value instanceof Single;
+					assertThat(condition).isTrue();
+					return Mono.from(RxReactiveStreams.toPublisher((Single<?>) value));
 				});
 	}
 
 	private void testValidationError(MethodParameter param, Function<Mono<?>, Mono<?>> valueMonoExtractor)
 			throws URISyntaxException {
 
-		ServerWebExchange exchange = exchange("age=invalid");
+		ServerWebExchange exchange = postForm("age=invalid");
 		Mono<?> mono = createResolver().resolveArgument(param, this.bindContext, exchange);
-
 		mono = valueMonoExtractor.apply(mono);
 
 		StepVerifier.create(mono)
 				.consumeErrorWith(ex -> {
-					assertTrue(ex instanceof WebExchangeBindException);
+					boolean condition = ex instanceof WebExchangeBindException;
+					assertThat(condition).isTrue();
 					WebExchangeBindException bindException = (WebExchangeBindException) ex;
-					assertEquals(1, bindException.getErrorCount());
-					assertTrue(bindException.hasFieldErrors("age"));
+					assertThat(bindException.getErrorCount()).isEqualTo(1);
+					assertThat(bindException.hasFieldErrors("age")).isTrue();
 				})
 				.verify();
 	}
 
-
-	private ModelAttributeMethodArgumentResolver createResolver() {
-		return new ModelAttributeMethodArgumentResolver(new ReactiveAdapterRegistry());
+	@Test
+	public void bindDataClass() throws Exception {
+		testBindBar(this.testMethod.annotNotPresent(ModelAttribute.class).arg(Bar.class));
 	}
 
-	private ServerWebExchange exchange(String formData) throws URISyntaxException {
-		MediaType mediaType = MediaType.APPLICATION_FORM_URLENCODED;
-		MockServerHttpRequest request = MockServerHttpRequest.post("/").contentType(mediaType).body(formData);
-		return new DefaultServerWebExchange(request, new MockServerHttpResponse());
+	private void testBindBar(MethodParameter param) throws Exception {
+		Object value = createResolver()
+				.resolveArgument(param, this.bindContext, postForm("name=Robert&age=25&count=1"))
+				.block(Duration.ZERO);
+
+		Bar bar = (Bar) value;
+		assertThat(bar.getName()).isEqualTo("Robert");
+		assertThat(bar.getAge()).isEqualTo(25);
+		assertThat(bar.getCount()).isEqualTo(1);
+
+		String key = "bar";
+		String bindingResultKey = BindingResult.MODEL_KEY_PREFIX + key;
+
+		Map<String, Object> map = bindContext.getModel().asMap();
+		assertThat(map.size()).as(map.toString()).isEqualTo(2);
+		assertThat(map.get(key)).isSameAs(bar);
+		assertThat(map.get(bindingResultKey)).isNotNull();
+		boolean condition = map.get(bindingResultKey) instanceof BindingResult;
+		assertThat(condition).isTrue();
+	}
+
+	// TODO: SPR-15871, SPR-15542
+
+
+	private ModelAttributeMethodArgumentResolver createResolver() {
+		return new ModelAttributeMethodArgumentResolver(ReactiveAdapterRegistry.getSharedInstance(), false);
+	}
+
+	private ServerWebExchange postForm(String formData) throws URISyntaxException {
+		return MockServerWebExchange.from(MockServerHttpRequest.post("/")
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.body(formData));
 	}
 
 
@@ -299,10 +327,12 @@ public class ModelAttributeMethodArgumentResolverTests {
 			Foo fooNotAnnotated,
 			String stringNotAnnotated,
 			Mono<Foo> monoNotAnnotated,
-			Mono<String> monoStringNotAnnotated) {
+			Mono<String> monoStringNotAnnotated,
+			Bar barNotAnnotated) {
 	}
 
 
+	@SuppressWarnings("unused")
 	private static class Foo {
 
 		private String name;
@@ -330,6 +360,38 @@ public class ModelAttributeMethodArgumentResolverTests {
 
 		public void setAge(int age) {
 			this.age = age;
+		}
+	}
+
+
+	@SuppressWarnings("unused")
+	private static class Bar {
+
+		private final String name;
+
+		private final int age;
+
+		private int count;
+
+		public Bar(String name, int age) {
+			this.name = name;
+			this.age = age;
+		}
+
+		public String getName() {
+			return name;
+		}
+
+		public int getAge() {
+			return this.age;
+		}
+
+		public int getCount() {
+			return count;
+		}
+
+		public void setCount(int count) {
+			this.count = count;
 		}
 	}
 

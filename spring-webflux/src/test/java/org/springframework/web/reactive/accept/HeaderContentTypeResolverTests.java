@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -13,23 +13,20 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+
 package org.springframework.web.reactive.accept;
 
-import java.net.URISyntaxException;
 import java.util.List;
 
-import org.junit.Before;
 import org.junit.Test;
 
 import org.springframework.http.MediaType;
-import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.mock.http.server.reactive.test.MockServerHttpRequest;
-import org.springframework.mock.http.server.reactive.test.MockServerHttpResponse;
+import org.springframework.mock.web.test.server.MockServerWebExchange;
 import org.springframework.web.server.NotAcceptableStatusException;
-import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.adapter.DefaultServerWebExchange;
 
-import static org.junit.Assert.assertEquals;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 /**
  * Unit tests for {@link HeaderContentTypeResolver}.
@@ -38,41 +35,28 @@ import static org.junit.Assert.assertEquals;
  */
 public class HeaderContentTypeResolverTests {
 
-	private HeaderContentTypeResolver resolver;
-
-
-	@Before
-	public void setup() {
-		this.resolver = new HeaderContentTypeResolver();
-	}
+	private final HeaderContentTypeResolver resolver = new HeaderContentTypeResolver();
 
 
 	@Test
 	public void resolveMediaTypes() throws Exception {
-		ServerWebExchange exchange = createExchange("text/plain; q=0.5, text/html, text/x-dvi; q=0.8, text/x-c");
-		List<MediaType> mediaTypes = this.resolver.resolveMediaTypes(exchange);
+		String header = "text/plain; q=0.5, text/html, text/x-dvi; q=0.8, text/x-c";
+		List<MediaType> mediaTypes = this.resolver.resolveMediaTypes(
+				MockServerWebExchange.from(MockServerHttpRequest.get("/").header("accept", header)));
 
-		assertEquals(4, mediaTypes.size());
-		assertEquals("text/html", mediaTypes.get(0).toString());
-		assertEquals("text/x-c", mediaTypes.get(1).toString());
-		assertEquals("text/x-dvi;q=0.8", mediaTypes.get(2).toString());
-		assertEquals("text/plain;q=0.5", mediaTypes.get(3).toString());
+		assertThat(mediaTypes.size()).isEqualTo(4);
+		assertThat(mediaTypes.get(0).toString()).isEqualTo("text/html");
+		assertThat(mediaTypes.get(1).toString()).isEqualTo("text/x-c");
+		assertThat(mediaTypes.get(2).toString()).isEqualTo("text/x-dvi;q=0.8");
+		assertThat(mediaTypes.get(3).toString()).isEqualTo("text/plain;q=0.5");
 	}
 
-	@Test(expected = NotAcceptableStatusException.class)
+	@Test
 	public void resolveMediaTypesParseError() throws Exception {
-		ServerWebExchange exchange = createExchange("textplain; q=0.5");
-		this.resolver.resolveMediaTypes(exchange);
-	}
-
-
-	private ServerWebExchange createExchange(String accept) throws URISyntaxException {
-
-		ServerHttpRequest request = (accept != null ?
-				MockServerHttpRequest.get("/").header("accept", accept).build() :
-				MockServerHttpRequest.get("/").build());
-
-		return new DefaultServerWebExchange(request, new MockServerHttpResponse());
+		String header = "textplain; q=0.5";
+		assertThatExceptionOfType(NotAcceptableStatusException.class).isThrownBy(() ->
+				this.resolver.resolveMediaTypes(
+						MockServerWebExchange.from(MockServerHttpRequest.get("/").header("accept", header))));
 	}
 
 }

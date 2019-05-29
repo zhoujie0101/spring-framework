@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2017 the original author or authors.
+ * Copyright 2002-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,6 +18,7 @@ package org.springframework.util.comparator;
 
 import java.util.Comparator;
 
+import org.springframework.lang.Nullable;
 import org.springframework.util.Assert;
 
 /**
@@ -32,8 +33,8 @@ import org.springframework.util.Assert;
  *
  * @author Phillip Webb
  * @since 3.2
+ * @param <T> the type of objects that may be compared by this comparator
  * @see Comparator#thenComparing(Comparator)
- * @param <T> the type of objects being compared
  */
 public class InstanceComparator<T> implements Comparator<T> {
 
@@ -58,7 +59,7 @@ public class InstanceComparator<T> implements Comparator<T> {
 		return (i1 < i2 ? -1 : (i1 == i2 ? 0 : 1));
 	}
 
-	private int getOrder(T object) {
+	private int getOrder(@Nullable T object) {
 		if (object != null) {
 			for (int i = 0; i < this.instanceOrder.length; i++) {
 				if (this.instanceOrder[i].isInstance(object)) {

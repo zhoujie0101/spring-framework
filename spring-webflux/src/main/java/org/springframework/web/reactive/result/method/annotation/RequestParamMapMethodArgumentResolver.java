@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2017 the original author or authors.
+ * Copyright 2002-2018 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,14 +17,14 @@
 package org.springframework.web.reactive.result.method.annotation;
 
 import java.util.Map;
-import java.util.Optional;
 
 import org.springframework.core.MethodParameter;
-import org.springframework.util.Assert;
+import org.springframework.core.ReactiveAdapterRegistry;
 import org.springframework.util.MultiValueMap;
 import org.springframework.util.StringUtils;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.reactive.BindingContext;
+import org.springframework.web.reactive.result.method.HandlerMethodArgumentResolverSupport;
 import org.springframework.web.reactive.result.method.SyncHandlerMethodArgumentResolver;
 import org.springframework.web.server.ServerWebExchange;
 
@@ -40,40 +40,35 @@ import org.springframework.web.server.ServerWebExchange;
  * request parameters have multiple values.
  *
  * @author Rossen Stoyanchev
+ * @author Sebastien Deleuze
  * @since 5.0
  * @see RequestParamMethodArgumentResolver
  */
-public class RequestParamMapMethodArgumentResolver implements SyncHandlerMethodArgumentResolver {
+public class RequestParamMapMethodArgumentResolver extends HandlerMethodArgumentResolverSupport
+		implements SyncHandlerMethodArgumentResolver {
+
+	public RequestParamMapMethodArgumentResolver(ReactiveAdapterRegistry adapterRegistry) {
+		super(adapterRegistry);
+	}
+
 
 	@Override
-	public boolean supportsParameter(MethodParameter parameter) {
-		RequestParam requestParam = parameter.getParameterAnnotation(RequestParam.class);
-		if (requestParam != null) {
-			if (Map.class.isAssignableFrom(parameter.getParameterType())) {
-				return !StringUtils.hasText(requestParam.name());
-			}
-		}
-		return false;
+	public boolean supportsParameter(MethodParameter param) {
+		return checkAnnotatedParamNoReactiveWrapper(param, RequestParam.class, this::allParams);
 	}
+
+	private boolean allParams(RequestParam requestParam, Class<?> type) {
+		return (Map.class.isAssignableFrom(type) && !StringUtils.hasText(requestParam.name()));
+	}
+
 
 	@Override
-	public Optional<Object> resolveArgumentValue(MethodParameter parameter, BindingContext context,
-			ServerWebExchange exchange) {
+	public Object resolveArgumentValue(
+			MethodParameter methodParameter, BindingContext context, ServerWebExchange exchange) {
 
-		MultiValueMap<String, String> requestParams = getRequestParams(exchange);
-		Object value = (isMultiValueMap(parameter) ? requestParams : requestParams.toSingleValueMap());
-		return Optional.of(value);
-	}
-
-	private MultiValueMap<String, String> getRequestParams(ServerWebExchange exchange) {
-		MultiValueMap<String, String> params = exchange.getRequestParams().subscribe().peek();
-		Assert.notNull(params, "Expected form data (if any) to be parsed.");
-		return params;
-	}
-
-	private boolean isMultiValueMap(MethodParameter parameter) {
-		Class<?> paramType = parameter.getParameterType();
-		return MultiValueMap.class.isAssignableFrom(paramType);
+		boolean isMultiValueMap = MultiValueMap.class.isAssignableFrom(methodParameter.getParameterType());
+		MultiValueMap<String, String> queryParams = exchange.getRequest().getQueryParams();
+		return (isMultiValueMap ? queryParams : queryParams.toSingleValueMap());
 	}
 
 }

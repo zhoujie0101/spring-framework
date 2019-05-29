@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2017 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -63,12 +63,14 @@ import org.springframework.beans.BeanWrapper;
 import org.springframework.beans.PropertyAccessorFactory;
 import org.springframework.beans.factory.DisposableBean;
 import org.springframework.beans.factory.InitializingBean;
+import org.springframework.lang.Nullable;
+import org.springframework.util.Assert;
 import org.springframework.util.ClassUtils;
 import org.springframework.web.context.ServletContextAware;
 
 /**
  * Helper class to configure Tiles 3.x for the Spring Framework. See
- * <a href="http://tiles.apache.org">http://tiles.apache.org</a>
+ * <a href="https://tiles.apache.org">https://tiles.apache.org</a>
  * for more information about Tiles, which basically is a templating mechanism
  * for web applications using JSPs and other template engines.
  *
@@ -130,20 +132,25 @@ public class TilesConfigurer implements ServletContextAware, InitializingBean, D
 
 	protected final Log logger = LogFactory.getLog(getClass());
 
+	@Nullable
 	private TilesInitializer tilesInitializer;
 
+	@Nullable
 	private String[] definitions;
 
 	private boolean checkRefresh = false;
 
 	private boolean validateDefinitions = true;
 
+	@Nullable
 	private Class<? extends DefinitionsFactory> definitionsFactoryClass;
 
+	@Nullable
 	private Class<? extends PreparerFactory> preparerFactoryClass;
 
 	private boolean useMutableTilesContainer = false;
 
+	@Nullable
 	private ServletContext servletContext;
 
 
@@ -264,6 +271,7 @@ public class TilesConfigurer implements ServletContextAware, InitializingBean, D
 	 */
 	@Override
 	public void afterPropertiesSet() throws TilesException {
+		Assert.state(this.servletContext != null, "No ServletContext available");
 		ApplicationContext preliminaryContext = new SpringWildcardServletTilesApplicationContext(this.servletContext);
 		if (this.tilesInitializer == null) {
 			this.tilesInitializer = new SpringTilesInitializer();
@@ -277,7 +285,9 @@ public class TilesConfigurer implements ServletContextAware, InitializingBean, D
 	 */
 	@Override
 	public void destroy() throws TilesException {
-		this.tilesInitializer.destroy();
+		if (this.tilesInitializer != null) {
+			this.tilesInitializer.destroy();
+		}
 	}
 
 

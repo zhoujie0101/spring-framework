@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2016 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -17,27 +17,33 @@
 package org.springframework.web.bind.support;
 
 import java.beans.PropertyEditorSupport;
-import java.io.UnsupportedEncodingException;
-import java.net.URLEncoder;
-import java.util.Iterator;
+import java.time.Duration;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 
 import org.junit.Before;
 import org.junit.Test;
+import reactor.core.publisher.Mono;
 
+import org.springframework.core.io.ClassPathResource;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.MediaType;
+import org.springframework.http.codec.FormHttpMessageWriter;
+import org.springframework.http.codec.multipart.FilePart;
+import org.springframework.http.codec.multipart.MultipartHttpMessageWriter;
+import org.springframework.mock.http.client.reactive.test.MockClientHttpRequest;
 import org.springframework.mock.http.server.reactive.test.MockServerHttpRequest;
-import org.springframework.mock.http.server.reactive.test.MockServerHttpResponse;
+import org.springframework.mock.web.test.server.MockServerWebExchange;
 import org.springframework.tests.sample.beans.ITestBean;
 import org.springframework.tests.sample.beans.TestBean;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.server.ServerWebExchange;
-import org.springframework.web.server.adapter.DefaultServerWebExchange;
 
-import static junit.framework.TestCase.assertFalse;
-import static org.junit.Assert.assertEquals;
-import static org.junit.Assert.assertNotNull;
-import static org.junit.Assert.assertTrue;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.core.ResolvableType.forClass;
+import static org.springframework.core.ResolvableType.forClassWithGenerics;
 
 /**
  * Unit tests for {@link WebExchangeDataBinder}.
@@ -46,13 +52,13 @@ import static org.junit.Assert.assertTrue;
  */
 public class WebExchangeDataBinderTests {
 
-	private WebExchangeDataBinder binder;
-
 	private TestBean testBean;
+
+	private WebExchangeDataBinder binder;
 
 
 	@Before
-	public void setUp() throws Exception {
+	public void setup() throws Exception {
 		this.testBean = new TestBean();
 		this.binder = new WebExchangeDataBinder(this.testBean, "person");
 		this.binder.registerCustomEditor(ITestBean.class, new TestBeanPropertyEditor());
@@ -64,10 +70,10 @@ public class WebExchangeDataBinderTests {
 		MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
 		formData.add("spouse", "someValue");
 		formData.add("spouse.name", "test");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
 
-		assertNotNull(this.testBean.getSpouse());
-		assertEquals("test", testBean.getSpouse().getName());
+		assertThat(this.testBean.getSpouse()).isNotNull();
+		assertThat(testBean.getSpouse().getName()).isEqualTo("test");
 	}
 
 	@Test
@@ -75,12 +81,12 @@ public class WebExchangeDataBinderTests {
 		MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
 		formData.add("_postProcessed", "visible");
 		formData.add("postProcessed", "on");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertTrue(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isTrue();
 
 		formData.remove("postProcessed");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertFalse(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isFalse();
 	}
 
 	@Test
@@ -90,12 +96,12 @@ public class WebExchangeDataBinderTests {
 		MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
 		formData.add("_postProcessed", "visible");
 		formData.add("postProcessed", "on");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertTrue(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isTrue();
 
 		formData.remove("postProcessed");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertFalse(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isFalse();
 	}
 
 	@Test
@@ -103,12 +109,12 @@ public class WebExchangeDataBinderTests {
 		MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
 		formData.add("!postProcessed", "off");
 		formData.add("postProcessed", "on");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertTrue(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isTrue();
 
 		formData.remove("postProcessed");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertFalse(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isFalse();
 	}
 
 	@Test
@@ -117,16 +123,16 @@ public class WebExchangeDataBinderTests {
 		formData.add("!postProcessed", "on");
 		formData.add("_postProcessed", "visible");
 		formData.add("postProcessed", "on");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertTrue(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isTrue();
 
 		formData.remove("postProcessed");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertTrue(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isTrue();
 
 		formData.remove("!postProcessed");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertFalse(this.testBean.isPostProcessed());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.isPostProcessed()).isFalse();
 	}
 
 	@Test
@@ -134,12 +140,12 @@ public class WebExchangeDataBinderTests {
 		MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
 		formData.add("!name", "anonymous");
 		formData.add("name", "Scott");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertEquals("Scott", this.testBean.getName());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.getName()).isEqualTo("Scott");
 
 		formData.remove("name");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertEquals("anonymous", this.testBean.getName());
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.getName()).isEqualTo("anonymous");
 	}
 
 	@Test
@@ -148,13 +154,13 @@ public class WebExchangeDataBinderTests {
 		formData.add("stringArray", "bar");
 		formData.add("stringArray", "abc");
 		formData.add("stringArray", "123,def");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertEquals("Expected all three items to be bound", 3, this.testBean.getStringArray().length);
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.getStringArray().length).as("Expected all three items to be bound").isEqualTo(3);
 
 		formData.remove("stringArray");
 		formData.add("stringArray", "123,def");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
-		assertEquals("Expected only 1 item to be bound", 1, this.testBean.getStringArray().length);
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
+		assertThat(this.testBean.getStringArray().length).as("Expected only 1 item to be bound").isEqualTo(1);
 	}
 
 	@Test
@@ -162,58 +168,76 @@ public class WebExchangeDataBinderTests {
 		MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
 		formData.add("spouse.name", "test");
 		formData.add("spouse", "someValue");
-		this.binder.bind(exchange(formData)).blockMillis(5000);
+		this.binder.bind(exchange(formData)).block(Duration.ofMillis(5000));
 
-		assertNotNull(this.testBean.getSpouse());
-		assertEquals("test", this.testBean.getSpouse().getName());
+		assertThat(this.testBean.getSpouse()).isNotNull();
+		assertThat(this.testBean.getSpouse().getName()).isEqualTo("test");
 	}
 
 	@Test
 	public void testBindingWithQueryParams() throws Exception {
 		String url = "/path?spouse=someValue&spouse.name=test";
-		MockServerHttpRequest request = MockServerHttpRequest.post(url).build();
-		ServerWebExchange exchange = new DefaultServerWebExchange(request, new MockServerHttpResponse());
-		this.binder.bind(exchange).blockMillis(5000);
+		ServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.post(url));
+		this.binder.bind(exchange).block(Duration.ofSeconds(5));
 
-		assertNotNull(this.testBean.getSpouse());
-		assertEquals("test", this.testBean.getSpouse().getName());
+		assertThat(this.testBean.getSpouse()).isNotNull();
+		assertThat(this.testBean.getSpouse().getName()).isEqualTo("test");
 	}
 
-	private String generateForm(MultiValueMap<String, String> form) {
-		StringBuilder builder = new StringBuilder();
-		try {
-			for (Iterator<String> names = form.keySet().iterator(); names.hasNext();) {
-				String name = names.next();
-				for (Iterator<String> values = form.get(name).iterator(); values.hasNext();) {
-					String value = values.next();
-					builder.append(URLEncoder.encode(name, "UTF-8"));
-					if (value != null) {
-						builder.append('=');
-						builder.append(URLEncoder.encode(value, "UTF-8"));
-						if (values.hasNext()) {
-							builder.append('&');
-						}
-					}
-				}
-				if (names.hasNext()) {
-					builder.append('&');
-				}
-			}
-		}
-		catch (UnsupportedEncodingException ex) {
-			throw new IllegalStateException(ex);
-		}
-		return builder.toString();
+	@Test
+	public void testMultipart() throws Exception {
+
+		MultipartBean bean = new MultipartBean();
+		WebExchangeDataBinder binder = new WebExchangeDataBinder(bean);
+
+		MultiValueMap<String, Object> data = new LinkedMultiValueMap<>();
+		data.add("name", "bar");
+		data.add("someList", "123");
+		data.add("someList", "abc");
+		data.add("someArray", "dec");
+		data.add("someArray", "456");
+		data.add("part", new ClassPathResource("org/springframework/http/codec/multipart/foo.txt"));
+		data.add("somePartList", new ClassPathResource("org/springframework/http/codec/multipart/foo.txt"));
+		data.add("somePartList", new ClassPathResource("org/springframework/http/server/reactive/spring.png"));
+		binder.bind(exchangeMultipart(data)).block(Duration.ofMillis(5000));
+
+		assertThat(bean.getName()).isEqualTo("bar");
+		assertThat(bean.getSomeList()).isEqualTo(Arrays.asList("123", "abc"));
+		assertThat(bean.getSomeArray()).isEqualTo(new String[] {"dec", "456"});
+		assertThat(bean.getPart().filename()).isEqualTo("foo.txt");
+		assertThat(bean.getSomePartList().size()).isEqualTo(2);
+		assertThat(bean.getSomePartList().get(0).filename()).isEqualTo("foo.txt");
+		assertThat(bean.getSomePartList().get(1).filename()).isEqualTo("spring.png");
 	}
+
+
 
 	private ServerWebExchange exchange(MultiValueMap<String, String> formData) {
 
-		MockServerHttpRequest request = MockServerHttpRequest
-				.post("/")
-				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
-				.body(generateForm(formData));
+		MockClientHttpRequest request = new MockClientHttpRequest(HttpMethod.POST, "/");
 
-		return new DefaultServerWebExchange(request, new MockServerHttpResponse());
+		new FormHttpMessageWriter().write(Mono.just(formData),
+				forClassWithGenerics(MultiValueMap.class, String.class, String.class),
+				MediaType.APPLICATION_FORM_URLENCODED, request, Collections.emptyMap()).block();
+
+		return MockServerWebExchange.from(
+				MockServerHttpRequest
+						.post("/")
+						.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+						.body(request.getBody()));
+	}
+
+	private ServerWebExchange exchangeMultipart(MultiValueMap<String, ?> multipartData) {
+
+		MockClientHttpRequest request = new MockClientHttpRequest(HttpMethod.POST, "/");
+
+		new MultipartHttpMessageWriter().write(Mono.just(multipartData), forClass(MultiValueMap.class),
+				MediaType.MULTIPART_FORM_DATA, request, Collections.emptyMap()).block();
+
+		return MockServerWebExchange.from(MockServerHttpRequest
+				.post("/")
+				.contentType(request.getHeaders().getContentType())
+				.body(request.getBody()));
 	}
 
 
@@ -222,6 +246,61 @@ public class WebExchangeDataBinderTests {
 		@Override
 		public void setAsText(String text) {
 			setValue(new TestBean());
+		}
+	}
+
+	@SuppressWarnings("unused")
+	private static class MultipartBean {
+
+		private String name;
+
+		private List<?> someList;
+
+		private String[] someArray;
+
+		private FilePart part;
+
+		private List<FilePart> somePartList;
+
+
+		public String getName() {
+			return this.name;
+		}
+
+		public void setName(String name) {
+			this.name = name;
+		}
+
+		public List<?> getSomeList() {
+			return this.someList;
+		}
+
+		public void setSomeList(List<?> someList) {
+			this.someList = someList;
+		}
+
+		public String[] getSomeArray() {
+			return this.someArray;
+		}
+
+		public void setSomeArray(String[] someArray) {
+			this.someArray = someArray;
+		}
+
+		public FilePart getPart() {
+			return this.part;
+		}
+
+		public void setPart(FilePart part) {
+			this.part = part;
+		}
+
+		public List<FilePart> getSomePartList() {
+			return this.somePartList;
+		}
+
+		public void setSomePartList(List<FilePart> somePartList) {
+			this.somePartList = somePartList;
 		}
 	}
 

@@ -1,11 +1,11 @@
 /*
- * Copyright 2002-2017 the original author or authors.
+ * Copyright 2002-2019 the original author or authors.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
  * You may obtain a copy of the License at
  *
- *      http://www.apache.org/licenses/LICENSE-2.0
+ *      https://www.apache.org/licenses/LICENSE-2.0
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -18,140 +18,170 @@ package org.springframework.web.reactive.function.server;
 
 import java.net.InetSocketAddress;
 import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.ByteBuffer;
 import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.OptionalLong;
-import java.util.Set;
 
-import org.junit.Before;
 import org.junit.Test;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
+import org.springframework.core.ParameterizedTypeReference;
 import org.springframework.core.codec.StringDecoder;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DefaultDataBuffer;
 import org.springframework.core.io.buffer.DefaultDataBufferFactory;
+import org.springframework.http.HttpCookie;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpRange;
 import org.springframework.http.MediaType;
 import org.springframework.http.codec.DecoderHttpMessageReader;
 import org.springframework.http.codec.HttpMessageReader;
-import org.springframework.http.server.reactive.ServerHttpRequest;
-import org.springframework.http.server.reactive.ServerHttpResponse;
+import org.springframework.http.codec.json.Jackson2JsonDecoder;
+import org.springframework.http.codec.multipart.FormFieldPart;
+import org.springframework.http.codec.multipart.Part;
+import org.springframework.mock.http.server.reactive.test.MockServerHttpRequest;
+import org.springframework.mock.web.test.server.MockServerWebExchange;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
-import org.springframework.web.server.ServerWebExchange;
+import org.springframework.web.server.ServerWebInputException;
 import org.springframework.web.server.UnsupportedMediaTypeStatusException;
-import org.springframework.web.server.WebSession;
 
-import static org.junit.Assert.*;
-import static org.mockito.Mockito.*;
-import static org.springframework.web.reactive.function.BodyExtractors.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.springframework.web.reactive.function.BodyExtractors.toMono;
 
 /**
  * @author Arjen Poutsma
  */
 public class DefaultServerRequestTests {
 
-	private ServerHttpRequest mockRequest;
-
-	private ServerHttpResponse mockResponse;
-
-	private ServerWebExchange mockExchange;
-
-	private HandlerStrategies mockHandlerStrategies;
-
-	private DefaultServerRequest defaultRequest;
-
-
-	@Before
-	public void createMocks() {
-		mockRequest = mock(ServerHttpRequest.class);
-		mockResponse = mock(ServerHttpResponse.class);
-
-		mockExchange = mock(ServerWebExchange.class);
-		when(mockExchange.getRequest()).thenReturn(mockRequest);
-		when(mockExchange.getResponse()).thenReturn(mockResponse);
-		mockHandlerStrategies = mock(HandlerStrategies.class);
-
-		defaultRequest = new DefaultServerRequest(mockExchange, mockHandlerStrategies);
-	}
+	private final List<HttpMessageReader<?>> messageReaders = Arrays.asList(
+			new DecoderHttpMessageReader<>(new Jackson2JsonDecoder()),
+			new DecoderHttpMessageReader<>(StringDecoder.allMimeTypes()));
 
 
 	@Test
-	public void method() throws Exception {
+	public void method() {
 		HttpMethod method = HttpMethod.HEAD;
-		when(mockRequest.getMethod()).thenReturn(method);
+		DefaultServerRequest request = new DefaultServerRequest(
+				MockServerWebExchange.from(MockServerHttpRequest.method(method, "https://example.com")),
+				this.messageReaders);
 
-		assertEquals(method, defaultRequest.method());
+		assertThat(request.method()).isEqualTo(method);
 	}
 
 	@Test
-	public void uri() throws Exception {
+	public void uri() {
 		URI uri = URI.create("https://example.com");
-		when(mockRequest.getURI()).thenReturn(uri);
 
-		assertEquals(uri, defaultRequest.uri());
+		DefaultServerRequest request = new DefaultServerRequest(
+				MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.GET, uri)),
+				this.messageReaders);
+
+		assertThat(request.uri()).isEqualTo(uri);
 	}
 
 	@Test
-	public void attribute() throws Exception {
-		when(mockExchange.getAttribute("foo")).thenReturn(Optional.of("bar"));
+	public void uriBuilder() throws URISyntaxException {
+		URI uri = new URI("http", "localhost", "/path", "a=1", null);
+		DefaultServerRequest request = new DefaultServerRequest(
+				MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.GET, uri)),
+				this.messageReaders);
 
-		assertEquals(Optional.of("bar"), defaultRequest.attribute("foo"));
+
+		URI result = request.uriBuilder().build();
+		assertThat(result.getScheme()).isEqualTo("http");
+		assertThat(result.getHost()).isEqualTo("localhost");
+		assertThat(result.getPort()).isEqualTo(-1);
+		assertThat(result.getPath()).isEqualTo("/path");
+		assertThat(result.getQuery()).isEqualTo("a=1");
 	}
 
 	@Test
-	public void queryParams() throws Exception {
-		MultiValueMap<String, String> queryParams = new LinkedMultiValueMap<>();
-		queryParams.set("foo", "bar");
-		when(mockRequest.getQueryParams()).thenReturn(queryParams);
+	public void attribute() {
+		MockServerWebExchange exchange = MockServerWebExchange.from(
+				MockServerHttpRequest.method(HttpMethod.GET, "https://example.com"));
+		exchange.getAttributes().put("foo", "bar");
 
-		assertEquals(Optional.of("bar"), defaultRequest.queryParam("foo"));
+		DefaultServerRequest request = new DefaultServerRequest(exchange, messageReaders);
+
+		assertThat(request.attribute("foo")).isEqualTo(Optional.of("bar"));
 	}
 
 	@Test
-	public void pathVariable() throws Exception {
+	public void queryParams() {
+		DefaultServerRequest request = new DefaultServerRequest(
+				MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.GET, "https://example.com?foo=bar")),
+				this.messageReaders);
+
+		assertThat(request.queryParam("foo")).isEqualTo(Optional.of("bar"));
+	}
+
+	@Test
+	public void emptyQueryParam() {
+		DefaultServerRequest request = new DefaultServerRequest(
+				MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.GET, "https://example.com?foo")),
+				this.messageReaders);
+
+		assertThat(request.queryParam("foo")).isEqualTo(Optional.of(""));
+	}
+
+	@Test
+	public void absentQueryParam() {
+		DefaultServerRequest request = new DefaultServerRequest(
+				MockServerWebExchange.from(MockServerHttpRequest.method(HttpMethod.GET, "https://example.com?foo")),
+				this.messageReaders);
+
+		assertThat(request.queryParam("bar")).isEqualTo(Optional.empty());
+	}
+
+	@Test
+	public void pathVariable() {
+		MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("https://example.com"));
 		Map<String, String> pathVariables = Collections.singletonMap("foo", "bar");
-		when(mockExchange.getAttribute(RouterFunctions.URI_TEMPLATE_VARIABLES_ATTRIBUTE)).thenReturn(Optional.of(pathVariables));
+		exchange.getAttributes().put(RouterFunctions.URI_TEMPLATE_VARIABLES_ATTRIBUTE, pathVariables);
 
-		assertEquals("bar", defaultRequest.pathVariable("foo"));
+		DefaultServerRequest request = new DefaultServerRequest(exchange, messageReaders);
+
+		assertThat(request.pathVariable("foo")).isEqualTo("bar");
 	}
 
-	@Test(expected = IllegalArgumentException.class)
-	public void pathVariableNotFound() throws Exception {
+
+	@Test
+	public void pathVariableNotFound() {
+		MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("https://example.com"));
 		Map<String, String> pathVariables = Collections.singletonMap("foo", "bar");
-		when(mockExchange.getAttribute(RouterFunctions.URI_TEMPLATE_VARIABLES_ATTRIBUTE)).thenReturn(Optional.of(pathVariables));
+		exchange.getAttributes().put(RouterFunctions.URI_TEMPLATE_VARIABLES_ATTRIBUTE, pathVariables);
 
-		assertEquals("bar", defaultRequest.pathVariable("baz"));
+		DefaultServerRequest request = new DefaultServerRequest(exchange, messageReaders);
+
+		assertThatIllegalArgumentException().isThrownBy(() ->
+				request.pathVariable("baz"));
 	}
 
 	@Test
-	public void pathVariables() throws Exception {
+	public void pathVariables() {
+		MockServerWebExchange exchange = MockServerWebExchange.from(MockServerHttpRequest.get("https://example.com"));
 		Map<String, String> pathVariables = Collections.singletonMap("foo", "bar");
-		when(mockExchange.getAttribute(RouterFunctions.URI_TEMPLATE_VARIABLES_ATTRIBUTE)).thenReturn(Optional.of(pathVariables));
+		exchange.getAttributes().put(RouterFunctions.URI_TEMPLATE_VARIABLES_ATTRIBUTE, pathVariables);
 
-		assertEquals(pathVariables, defaultRequest.pathVariables());
+		DefaultServerRequest request = new DefaultServerRequest(exchange, messageReaders);
+
+		assertThat(request.pathVariables()).isEqualTo(pathVariables);
 	}
 
 	@Test
-	public void session() throws Exception {
-		WebSession session = mock(WebSession.class);
-		when(mockExchange.getSession()).thenReturn(Mono.just(session));
-
-		assertEquals(session, defaultRequest.session().block());
-	}
-
-	@Test
-	public void header() throws Exception {
+	public void header() {
 		HttpHeaders httpHeaders = new HttpHeaders();
 		List<MediaType> accept =
 				Collections.singletonList(MediaType.APPLICATION_JSON);
@@ -167,18 +197,37 @@ public class DefaultServerRequestTests {
 		List<HttpRange> range = Collections.singletonList(HttpRange.createByteRange(0, 42));
 		httpHeaders.setRange(range);
 
-		when(mockRequest.getHeaders()).thenReturn(httpHeaders);
+		DefaultServerRequest request = new DefaultServerRequest(
+				MockServerWebExchange.from(MockServerHttpRequest
+						.method(HttpMethod.GET, "https://example.com?foo=bar")
+						.headers(httpHeaders)),
+				this.messageReaders);
 
-		ServerRequest.Headers headers = defaultRequest.headers();
-		assertEquals(accept, headers.accept());
-		assertEquals(acceptCharset, headers.acceptCharset());
-		assertEquals(OptionalLong.of(contentLength), headers.contentLength());
-		assertEquals(Optional.of(contentType), headers.contentType());
-		assertEquals(httpHeaders, headers.asHttpHeaders());
+		ServerRequest.Headers headers = request.headers();
+		assertThat(headers.accept()).isEqualTo(accept);
+		assertThat(headers.acceptCharset()).isEqualTo(acceptCharset);
+		assertThat(headers.contentLength()).isEqualTo(OptionalLong.of(contentLength));
+		assertThat(headers.contentType()).isEqualTo(Optional.of(contentType));
+		assertThat(headers.asHttpHeaders()).isEqualTo(httpHeaders);
 	}
 
 	@Test
-	public void body() throws Exception {
+	public void cookies() {
+		HttpCookie cookie = new HttpCookie("foo", "bar");
+		MockServerWebExchange exchange = MockServerWebExchange.from(
+				MockServerHttpRequest.method(HttpMethod.GET, "https://example.com").cookie(cookie));
+
+		DefaultServerRequest request = new DefaultServerRequest(exchange, messageReaders);
+
+		MultiValueMap<String, HttpCookie> expected = new LinkedMultiValueMap<>();
+		expected.add("foo", cookie);
+
+		assertThat(request.cookies()).isEqualTo(expected);
+
+	}
+
+	@Test
+	public void body() {
 		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
 		DefaultDataBuffer dataBuffer =
 				factory.wrap(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
@@ -186,19 +235,19 @@ public class DefaultServerRequestTests {
 
 		HttpHeaders httpHeaders = new HttpHeaders();
 		httpHeaders.setContentType(MediaType.TEXT_PLAIN);
-		when(mockRequest.getHeaders()).thenReturn(httpHeaders);
-		when(mockRequest.getBody()).thenReturn(body);
 
-		Set<HttpMessageReader<?>> messageReaders = Collections
-				.singleton(new DecoderHttpMessageReader<String>(new StringDecoder()));
-		when(mockHandlerStrategies.messageReaders()).thenReturn(messageReaders::stream);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com?foo=bar")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), messageReaders);
 
-		Mono<String> resultMono = defaultRequest.body(toMono(String.class));
-		assertEquals("foo", resultMono.block());
+		Mono<String> resultMono = request.body(toMono(String.class));
+		assertThat(resultMono.block()).isEqualTo("foo");
 	}
 
 	@Test
-	public void bodyToMono() throws Exception {
+	public void bodyToMono() {
 		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
 		DefaultDataBuffer dataBuffer =
 				factory.wrap(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
@@ -206,19 +255,18 @@ public class DefaultServerRequestTests {
 
 		HttpHeaders httpHeaders = new HttpHeaders();
 		httpHeaders.setContentType(MediaType.TEXT_PLAIN);
-		when(mockRequest.getHeaders()).thenReturn(httpHeaders);
-		when(mockRequest.getBody()).thenReturn(body);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com?foo=bar")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), messageReaders);
 
-		Set<HttpMessageReader<?>> messageReaders = Collections
-				.singleton(new DecoderHttpMessageReader<String>(new StringDecoder()));
-		when(mockHandlerStrategies.messageReaders()).thenReturn(messageReaders::stream);
-
-		Mono<String> resultMono = defaultRequest.bodyToMono(String.class);
-		assertEquals("foo", resultMono.block());
+		Mono<String> resultMono = request.bodyToMono(String.class);
+		assertThat(resultMono.block()).isEqualTo("foo");
 	}
 
 	@Test
-	public void bodyToFlux() throws Exception {
+	public void bodyToMonoParameterizedTypeReference() {
 		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
 		DefaultDataBuffer dataBuffer =
 				factory.wrap(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
@@ -226,20 +274,41 @@ public class DefaultServerRequestTests {
 
 		HttpHeaders httpHeaders = new HttpHeaders();
 		httpHeaders.setContentType(MediaType.TEXT_PLAIN);
-		when(mockRequest.getHeaders()).thenReturn(httpHeaders);
-		when(mockRequest.getBody()).thenReturn(body);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com?foo=bar")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), messageReaders);
 
-		Set<HttpMessageReader<?>> messageReaders = Collections
-				.singleton(new DecoderHttpMessageReader<String>(new StringDecoder()));
-		when(mockHandlerStrategies.messageReaders()).thenReturn(messageReaders::stream);
-
-		Flux<String> resultFlux = defaultRequest.bodyToFlux(String.class);
-		Mono<List<String>> result = resultFlux.collectList();
-		assertEquals(Collections.singletonList("foo"), result.block());
+		ParameterizedTypeReference<String> typeReference = new ParameterizedTypeReference<String>() {};
+		Mono<String> resultMono = request.bodyToMono(typeReference);
+		assertThat(resultMono.block()).isEqualTo("foo");
 	}
 
 	@Test
-	public void bodyUnacceptable() throws Exception {
+	public void bodyToMonoDecodingException() {
+		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
+		DefaultDataBuffer dataBuffer =
+				factory.wrap(ByteBuffer.wrap("{\"invalid\":\"json\" ".getBytes(StandardCharsets.UTF_8)));
+		Flux<DataBuffer> body = Flux.just(dataBuffer);
+
+		HttpHeaders httpHeaders = new HttpHeaders();
+		httpHeaders.setContentType(MediaType.APPLICATION_JSON);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.POST, "https://example.com/invalid")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), messageReaders);
+
+		Mono<Map<String, String>> resultMono = request.bodyToMono(
+				new ParameterizedTypeReference<Map<String, String>>() {});
+		StepVerifier.create(resultMono)
+				.expectError(ServerWebInputException.class)
+				.verify();
+	}
+
+	@Test
+	public void bodyToFlux() {
 		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
 		DefaultDataBuffer dataBuffer =
 				factory.wrap(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
@@ -247,16 +316,124 @@ public class DefaultServerRequestTests {
 
 		HttpHeaders httpHeaders = new HttpHeaders();
 		httpHeaders.setContentType(MediaType.TEXT_PLAIN);
-		when(mockRequest.getHeaders()).thenReturn(httpHeaders);
-		when(mockRequest.getBody()).thenReturn(body);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com?foo=bar")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), messageReaders);
 
-		Set<HttpMessageReader<?>> messageReaders = Collections.emptySet();
-		when(mockHandlerStrategies.messageReaders()).thenReturn(messageReaders::stream);
+		Flux<String> resultFlux = request.bodyToFlux(String.class);
+		assertThat(resultFlux.collectList().block()).isEqualTo(Collections.singletonList("foo"));
+	}
 
-		Flux<String> resultFlux = defaultRequest.bodyToFlux(String.class);
+	@Test
+	public void bodyToFluxParameterizedTypeReference() {
+		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
+		DefaultDataBuffer dataBuffer =
+				factory.wrap(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
+		Flux<DataBuffer> body = Flux.just(dataBuffer);
+
+		HttpHeaders httpHeaders = new HttpHeaders();
+		httpHeaders.setContentType(MediaType.TEXT_PLAIN);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com?foo=bar")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), messageReaders);
+
+		ParameterizedTypeReference<String> typeReference = new ParameterizedTypeReference<String>() {};
+		Flux<String> resultFlux = request.bodyToFlux(typeReference);
+		assertThat(resultFlux.collectList().block()).isEqualTo(Collections.singletonList("foo"));
+	}
+
+	@Test
+	public void bodyUnacceptable() {
+		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
+		DefaultDataBuffer dataBuffer =
+				factory.wrap(ByteBuffer.wrap("foo".getBytes(StandardCharsets.UTF_8)));
+		Flux<DataBuffer> body = Flux.just(dataBuffer);
+
+		HttpHeaders httpHeaders = new HttpHeaders();
+		httpHeaders.setContentType(MediaType.TEXT_PLAIN);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com?foo=bar")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), Collections.emptyList());
+
+		Flux<String> resultFlux = request.bodyToFlux(String.class);
 		StepVerifier.create(resultFlux)
 				.expectError(UnsupportedMediaTypeStatusException.class)
 				.verify();
+	}
+
+	@Test
+	public void formData() {
+		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
+		DefaultDataBuffer dataBuffer =
+				factory.wrap(ByteBuffer.wrap("foo=bar&baz=qux".getBytes(StandardCharsets.UTF_8)));
+		Flux<DataBuffer> body = Flux.just(dataBuffer);
+
+		HttpHeaders httpHeaders = new HttpHeaders();
+		httpHeaders.setContentType(MediaType.APPLICATION_FORM_URLENCODED);
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), Collections.emptyList());
+
+		Mono<MultiValueMap<String, String>> resultData = request.formData();
+		StepVerifier.create(resultData)
+				.consumeNextWith(formData -> {
+					assertThat(formData.size()).isEqualTo(2);
+					assertThat(formData.getFirst("foo")).isEqualTo("bar");
+					assertThat(formData.getFirst("baz")).isEqualTo("qux");
+				})
+				.verifyComplete();
+	}
+
+	@Test
+	public void multipartData() {
+		String data = "--12345\r\n" +
+				"Content-Disposition: form-data; name=\"foo\"\r\n" +
+				"\r\n" +
+				"bar\r\n" +
+				"--12345\r\n" +
+				"Content-Disposition: form-data; name=\"baz\"\r\n" +
+				"\r\n" +
+				"qux\r\n" +
+				"--12345--\r\n";
+		DefaultDataBufferFactory factory = new DefaultDataBufferFactory();
+		DefaultDataBuffer dataBuffer =
+				factory.wrap(ByteBuffer.wrap(data.getBytes(StandardCharsets.UTF_8)));
+		Flux<DataBuffer> body = Flux.just(dataBuffer);
+
+		HttpHeaders httpHeaders = new HttpHeaders();
+		httpHeaders.set(HttpHeaders.CONTENT_TYPE, "multipart/form-data; boundary=12345");
+		MockServerHttpRequest mockRequest = MockServerHttpRequest
+				.method(HttpMethod.GET, "https://example.com")
+				.headers(httpHeaders)
+				.body(body);
+		DefaultServerRequest request = new DefaultServerRequest(MockServerWebExchange.from(mockRequest), Collections.emptyList());
+
+		Mono<MultiValueMap<String, Part>> resultData = request.multipartData();
+		StepVerifier.create(resultData)
+				.consumeNextWith(formData -> {
+					assertThat(formData.size()).isEqualTo(2);
+
+					Part part = formData.getFirst("foo");
+					boolean condition1 = part instanceof FormFieldPart;
+					assertThat(condition1).isTrue();
+					FormFieldPart formFieldPart = (FormFieldPart) part;
+					assertThat(formFieldPart.value()).isEqualTo("bar");
+
+					part = formData.getFirst("baz");
+					boolean condition = part instanceof FormFieldPart;
+					assertThat(condition).isTrue();
+					formFieldPart = (FormFieldPart) part;
+					assertThat(formFieldPart.value()).isEqualTo("qux");
+				})
+				.verifyComplete();
 	}
 
 }
